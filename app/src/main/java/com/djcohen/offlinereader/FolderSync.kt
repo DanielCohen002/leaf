@@ -23,9 +23,12 @@ object FolderSync {
         )
 
         fun walk(docId: String, depth: Int) {
-            if (depth > 6) return
+            if (depth > 12) return
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
-            context.contentResolver.query(children, columns, null, null, null)?.use { c ->
+            // A listing that fails part-way must not look like "those books were deleted", so it aborts the whole scan.
+            val cursor = context.contentResolver.query(children, columns, null, null, null)
+                ?: throw IllegalStateException("The folder could not be listed")
+            cursor.use { c ->
                 while (c.moveToNext()) {
                     val id = c.getString(0) ?: continue
                     val name = c.getString(1) ?: continue

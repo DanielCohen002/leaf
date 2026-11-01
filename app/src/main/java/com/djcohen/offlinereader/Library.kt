@@ -193,11 +193,12 @@ class Library(private val context: Context) {
         save(entries().map { if (it.id == e.id) it.copy(title = t) else it })
     }
 
-    fun remove(e: Entry) {
+    /** [ignoreSource] = true when the user removed the book (it must not come back by itself); false when its file left the folder. */
+    fun remove(e: Entry, ignoreSource: Boolean = true) {
         file(e).delete()
         coverFile(e.id).delete()
         noCoverMarker(e.id).delete()
-        ignore(e.src)   // removed on purpose: don't bring it back from the synced folder
+        if (ignoreSource) ignore(e.src)   // removed on purpose: don't bring it back from the synced folder
         save(entries().filter { it.id != e.id })
         sp.edit().remove("pos_${e.id}").remove("postitle_${e.id}").remove("read_${e.id}").apply()
     }

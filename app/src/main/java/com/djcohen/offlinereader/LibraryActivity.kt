@@ -331,7 +331,10 @@ class LibraryActivity : Activity() {
     private var syncing = false
     private var lastSync = 0L
 
-    /** Add the books in the synced folder that Leaf does not have yet. Books you removed stay removed. */
+    /**
+     * Keep Leaf in step with the synced folder: add books that are new there, follow files that were moved, and remove
+     * books whose file is gone from the folder. Books added by hand are never removed this way.
+     */
     private fun syncFolder(quiet: Boolean) {
         val tree = library.syncFolder?.let { Uri.parse(it) } ?: return
         if (syncing) return
@@ -346,17 +349,27 @@ class LibraryActivity : Activity() {
         io.execute {
             var added = 0
             var lostAccess = false
+            var gone: List<Entry> = emptyList()
+            var syncedBefore = 0
             val failed = ArrayList<String>()
             try {
-                val docs = FolderSync.scan(this, tree)
+                val docs = FolderSync.scan(this, tree)          // throws if the folder can't be listed completely
+                val present = docs.map { it.uri.toString() }.toHashSet()
                 val known = library.entries()
-                val have = known.map { it.src }.filter { it.isNotEmpty() }.toSet()
+                syncedBefore = known.count { it.src.isNotEmpty() }
+                val have = known.map { it.src }.filter { it.isNotEmpty() }.toHashSet()
+                // Books whose file is no longer where it was. A file moved to another sub-folder shows up as one of these
+                // plus a "new" file, so new files are matched against them first.
+                val orphans = known.filter { it.src.isNotEmpty() && it.src !in present }.toMutableList()
                 val claimed = HashSet<String>()
                 for (d in docs) {
                     val key = d.uri.toString()
                     if (key in have || library.isIgnored(key)) continue
-                    // Already added by hand (same kind of file, same size)? Just remember where it came from.
                     val ext = FolderSync.storedExt(d.name.substringAfterLast('.', "").lowercase())
+                    // Same kind of file and size as a book whose own file vanished? It was moved: follow it.
+                    val moved = orphans.firstOrNull { it.ext == ext && library.storedSize(it) == d.size }
+                    if (moved != null) { orphans.remove(moved); library.setSource(moved, key); continue }
+                    // Same as a book added by hand? Just remember where it came from.
                     val twin = known.firstOrNull {
                         it.src.isEmpty() && it.id !in claimed && it.ext == ext && library.storedSize(it) == d.size
                     }
@@ -370,26 +383,55 @@ class LibraryActivity : Activity() {
                         library.ignore(key)   // do not retry a broken or locked file every time
                     }
                 }
+                // Whatever is still orphaned was deleted from the folder. An empty listing is not trusted: the storage
+                // may simply be unavailable, and that must never wipe the library.
+                if (docs.isNotEmpty()) gone = orphans.toList()
             } catch (e: SecurityException) {
                 lostAccess = true
             } catch (t: Throwable) {
-                // keep whatever was added
+                // The scan did not finish cleanly: keep whatever was added and remove nothing.
+                gone = emptyList()
             }
+            // Removing many books at once is more likely a glitch than a clean-up, so that case asks first.
+            val needsConfirm = gone.size >= 4 && gone.size * 2 > syncedBefore
             ui.post {
                 syncing = false
                 if (lostAccess) {
                     library.syncFolder = null
                     toast("Leaf can no longer read that folder. Choose it again from Add books.")
                 }
-                refresh()
-                val bad = if (failed.isNotEmpty()) " (${failed.size} could not be read)" else ""
-                when {
-                    added > 0 -> toast("Added $added new book" + (if (added == 1) "" else "s") + bad)
-                    failed.isNotEmpty() -> toast("${failed.size} file" + (if (failed.size == 1) "" else "s") + " could not be read")
-                    !quiet && !lostAccess -> toast("Everything in the folder is already in Leaf")
+                var removed = 0
+                if (gone.isNotEmpty()) {
+                    if (needsConfirm) confirmRemoveGone(gone)
+                    else { gone.forEach { library.remove(it, ignoreSource = false) }; removed = gone.size }
                 }
+                refresh()
+                val parts = ArrayList<String>()
+                if (added > 0) parts += "added $added"
+                if (removed > 0) parts += "removed $removed that left the folder"
+                if (failed.isNotEmpty()) parts += "${failed.size} could not be read"
+                if (parts.isNotEmpty()) toast(parts.joinToString(", ").replaceFirstChar { it.uppercase() })
+                else if (!quiet && !lostAccess && gone.isEmpty()) toast("Leaf already matches the folder")
             }
         }
+    }
+
+    private fun confirmRemoveGone(gone: List<Entry>) {
+        val list = gone.take(6).joinToString("\n") { "• " + it.title } + if (gone.size > 6) "\n…and ${gone.size - 6} more" else ""
+        AlertDialog.Builder(this)
+            .setTitle("Remove ${gone.size} books?")
+            .setMessage("These are no longer in your synced folder:\n\n$list\n\nRemoving them also forgets your reading positions.")
+            .setPositiveButton("Remove") { _, _ ->
+                gone.forEach { library.remove(it, ignoreSource = false) }
+                refresh()
+                toast("Removed ${gone.size} books")
+            }
+            .setNegativeButton("Keep them") { _, _ ->
+                // They become ordinary books added by hand, so the sync stops asking about them.
+                gone.forEach { library.setSource(it, "") }
+                toast("They stay in Leaf")
+            }
+            .showLeaf()
     }
 
     private fun pickFiles() {
