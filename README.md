@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/leaf-icon.png" alt="Leaf icon" width="160"></p>
+
 # Leaf
 
 A personal e-reader for Android that never touches the internet. The name is a double meaning: a leaf of a plant,
@@ -22,6 +24,14 @@ connection. There is no cloud sync, no analytics, and no web dictionary: lookups
 - Reading position is remembered per book; reading settings are remembered per file format
 - Library as a list or a grid of covers; books you have read come first (most recent on top), then the rest A to Z
 - Optionally keep a folder (such as `Books`) in sync: chosen once with the system folder picker, so Leaf still needs no storage permission
+
+## Download
+
+Get the latest `Leaf-<version>.apk` from the
+[Releases page](https://github.com/DanielCohen002/leaf/releases) and open it on your phone (64-bit ARM,
+Android 11 or newer). You may need to allow installs from your browser or file manager. Google Play Protect can
+show an "App scan recommended" prompt because the app isn't from the Play Store: choose **Install without
+scanning** (or **Scan app**). New versions install over the old one and keep your library.
 
 ## Building
 

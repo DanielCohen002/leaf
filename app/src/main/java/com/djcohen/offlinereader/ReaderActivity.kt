@@ -151,7 +151,7 @@ class ReaderActivity : Activity() {
 
     private fun applyStyle() {
         val t = Themes.all[prefs.theme.coerceIn(Themes.all.indices)]
-        page.setStyle(Fonts.typeface(prefs.font), prefs.textSizeSp, prefs.spacing / 100f, t.fg, t.bg)
+        page.setStyle(Fonts.typeface(prefs.font), prefs.textSizeSp, prefs.spacing / 100f, t.fg, t.bg, prefs.indent / 10f)
         page.setScrollMode(prefs.textScroll)
         window.decorView.setBackgroundColor(t.bg)
         if (prefs.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -298,6 +298,8 @@ class ReaderActivity : Activity() {
 
     // --- settings --------------------------------------------------------------------------
 
+    private fun indentText(tenthsOfEm: Int) = if (tenthsOfEm == 0) "none" else "${tenthsOfEm / 10f} em"
+
     private fun showSettings() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8)) }
         fun label(t: String) = TextView(this).apply { text = t; setPadding(0, dp(12), 0, dp(4)) }.also { box.addView(it) }
@@ -331,6 +333,16 @@ class ReaderActivity : Activity() {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { spaceLabel.text = "Line spacing: ${(100 + p * 5) / 100f}" }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
                 override fun onStopTrackingTouch(s: SeekBar?) { prefs.spacing = 100 + progress * 5; applyStyle() }
+            })
+        })
+
+        val indentLabel = label("Paragraph indent: ${indentText(prefs.indent)}")
+        box.addView(SeekBar(this).apply {
+            max = 30; progress = prefs.indent
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { indentLabel.text = "Paragraph indent: ${indentText(p)}" }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) { prefs.indent = progress; applyStyle() }
             })
         })
 

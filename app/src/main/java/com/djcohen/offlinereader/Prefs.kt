@@ -45,6 +45,10 @@ class Prefs(context: Context, ext: String = "") {
     var font: Int
         get() = int("font", 0)
         set(v) = putInt("font", v)
+    /** First-line paragraph indent, in tenths of an em (0 = none). */
+    var indent: Int
+        get() = int("indent", 12)
+        set(v) = putInt("indent", v)
     var textSizeSp: Int
         get() = int("size", 19)
         set(v) = putInt("size", v)

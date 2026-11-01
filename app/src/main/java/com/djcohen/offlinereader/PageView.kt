@@ -38,6 +38,8 @@ class PageView(context: Context) : View(context) {
     private var spacingMult = 1.4f
     private var insetL = 0; private var insetT = 0; private var insetR = 0; private var insetB = 0
     private var pendingOffset = 0
+    private var raw: CharSequence = ""     // the chapter as loaded; [text] is this plus paragraph indents
+    private var indentPx = 0
 
     // --- continuous scroll mode (instead of turning pages) -------------------------------------
     private var scrollMode = false
@@ -201,13 +203,14 @@ class PageView(context: Context) : View(context) {
         relayout(currentOffset)
     }
 
-    fun setStyle(typeface: Typeface, sizeSp: Int, spacing: Float, fgColor: Int, bgColor: Int) {
+    fun setStyle(typeface: Typeface, sizeSp: Int, spacing: Float, fgColor: Int, bgColor: Int, indentEm: Float = 1.2f) {
         clearSelection()
         val keep = currentOffset
         paint.typeface = typeface
         paint.textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, sizeSp.toFloat(), resources.displayMetrics)
         paint.color = fgColor
         paint.linkColor = fgColor
+        indentPx = (indentEm * paint.textSize).toInt()
         footerPaint.color = (fgColor and 0x00FFFFFF) or 0xBB000000.toInt()
         footerPaint.typeface = typeface
         footerPaint.textSize = maxOf(paint.textSize * 0.85f, 16 * density)
@@ -219,6 +222,7 @@ class PageView(context: Context) : View(context) {
     /** Show [content], opening at the page containing [offset]; a negative offset opens on the last page. */
     fun setContent(content: Spanned, offset: Int) {
         clearSelection()
+        raw = content
         text = content
         relayout(offset)
         invalidate()
@@ -227,6 +231,7 @@ class PageView(context: Context) : View(context) {
     private fun relayout(offset: Int) {
         clearSelection()
         if (width == 0 || height == 0) { pendingOffset = offset; return }
+        text = withIndent(raw)
         val len = text.length
         layout = StaticLayout.Builder.obtain(text, 0, len, paint, contentWidth)
             .setLineSpacing(0f, spacingMult).setIncludePad(false).build()
@@ -251,6 +256,22 @@ class PageView(context: Context) : View(context) {
         if (starts.isEmpty()) starts += 0
         pageStartLines = starts.toIntArray()
         page = if (offset < 0) pageStartLines.size - 1 else pageForOffset(offset)
+    }
+
+    /** Indent the first line of each real paragraph (short lines such as headings and captions are left alone). */
+    private fun withIndent(src: CharSequence): CharSequence {
+        if (indentPx <= 0 || src.isEmpty()) return src
+        val sb = android.text.SpannableStringBuilder(src)
+        var i = 0
+        while (i < sb.length) {
+            var j = sb.indexOf('\n', i)
+            if (j < 0) j = sb.length
+            if (j - i > 60) {
+                sb.setSpan(android.text.style.LeadingMarginSpan.Standard(indentPx, 0), i, minOf(j + 1, sb.length), Spanned.SPAN_PARAGRAPH)
+            }
+            i = j + 1
+        }
+        return sb
     }
 
     private fun pageForOffset(offset: Int): Int {

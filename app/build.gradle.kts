@@ -21,8 +21,8 @@ android {
         applicationId = "com.djcohen.leaf"
         minSdk = 30
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
         // 64-bit phones only: keeps the bundled archive library (RAR/7z support) from bloating the APK.
         ndk { abiFilters += listOf("arm64-v8a") }
     }

@@ -96,7 +96,6 @@ internal object HtmlText {
         var start = 0
         while (start < sb.length && sb[start].isWhitespace()) start++
         sb.delete(0, start)
-        indentParagraphs(sb)
         return sb
     }
 
@@ -175,9 +174,7 @@ class TxtBook(file: File) : Book {
     }
 
     override fun load(index: Int, maxW: Int, maxH: Int): Spanned {
-        val sb = SpannableStringBuilder(chapters[index].second.trimEnd())
-        HtmlText.indentParagraphs(sb)
-        return sb
+        return SpannableStringBuilder(chapters[index].second.trimEnd())
     }
 
     override fun close() {}
