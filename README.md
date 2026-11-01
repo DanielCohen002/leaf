@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/leaf-icon.png" alt="Leaflet icon" width="160"></p>
+<p align="center"><img src="docs/leaflet-icon.png" alt="Leaflet icon" width="160"></p>
 
 # Leaflet
 

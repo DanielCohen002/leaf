@@ -152,7 +152,7 @@ class LibraryActivity : Activity() {
         setColor(color); cornerRadius = radiusDp * resources.displayMetrics.density
     }
 
-    /** The Leaf mark (half leaf, half page), drawn on the forest background. */
+    /** The Leaflet mark (half leaf, half page), drawn on the forest background. */
     private fun logo() = ImageView(this).apply {
         setImageResource(R.drawable.ic_launcher_foreground)
         scaleType = ImageView.ScaleType.FIT_CENTER
@@ -305,7 +305,7 @@ class LibraryActivity : Activity() {
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
 
-    /** "Add books": pick files, or choose a folder (like Books) whose books Leaf keeps in sync. */
+    /** "Add books": pick files, or choose a folder (like Books) whose books Leaflet keeps in sync. */
     private fun showAddMenu() {
         val folder = library.syncFolder
         val items = ArrayList<String>()
@@ -345,7 +345,7 @@ class LibraryActivity : Activity() {
     private var lastSync = 0L
 
     /**
-     * Keep Leaf in step with the synced folder: add books that are new there, follow files that were moved, and remove
+     * Keep Leaflet in step with the synced folder: add books that are new there, follow files that were moved, and remove
      * books whose file is gone from the folder. Books added by hand are never removed this way.
      */
     private fun syncFolder(quiet: Boolean) {
@@ -354,7 +354,7 @@ class LibraryActivity : Activity() {
         syncing = true
         lastSync = System.currentTimeMillis()
         if (!quiet) {
-            // A sync you ask for brings back everything that is in the folder but not in Leaf, even books you removed.
+            // A sync you ask for brings back everything that is in the folder but not in Leaflet, even books you removed.
             // (The automatic check on opening the library still leaves removed books alone.)
             library.clearIgnored()
             toast("Looking for books…")
@@ -538,7 +538,7 @@ class LibraryActivity : Activity() {
         private var autoOpenDone = false
         private const val REQ_PICK = 1
         private const val REQ_FOLDER = 2
-        // Leaf palette (matches the icon).
+        // Leaflet palette (matches the icon).
         private const val FOREST = 0xFF1E3A2A.toInt()
         private const val LEAF = 0xFF6CC070.toInt()
         private const val LEAF_PRESSED = 0xFF55A85A.toInt()

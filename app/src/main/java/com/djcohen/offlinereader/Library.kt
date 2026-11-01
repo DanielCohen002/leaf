@@ -112,7 +112,7 @@ class Library(private val context: Context) {
         get() = sp.getString("syncfolder", null)
         set(v) { if (v == null) sp.edit().remove("syncfolder").apply() else sp.edit().putString("syncfolder", v).apply() }
 
-    /** Folder files the user removed from Leaf: never added back automatically. */
+    /** Folder files the user removed from Leaflet: never added back automatically. */
     fun isIgnored(src: String) = sp.getStringSet("ignored_src", emptySet())?.contains(src) == true
 
     /** Forget which folder files were removed, so a manual sync can bring every missing book back. */

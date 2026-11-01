@@ -6,7 +6,7 @@ import android.provider.DocumentsContract
 
 /**
  * Finds books inside a folder the user picked with the system folder picker. This needs no storage permission:
- * Android grants Leaf access to that one folder only.
+ * Android grants Leaflet access to that one folder only.
  */
 object FolderSync {
     class Doc(val uri: Uri, val name: String, val size: Long)

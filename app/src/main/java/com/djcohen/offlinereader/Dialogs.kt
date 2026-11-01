@@ -10,7 +10,7 @@ private const val LEAF_PRESSED = 0xFF55A85A.toInt()
 private const val FOREST = 0xFF1E3A2A.toInt()
 
 /**
- * Show a dialog with Leaf-colored buttons. The system draws dialog buttons in its own accent (blue on this phone)
+ * Show a dialog with Leaflet-colored buttons. The system draws dialog buttons in its own accent (blue on this phone)
  * regardless of the app theme, so they are restyled here: a leaf-green pill for the main button, green text for the rest.
  */
 fun AlertDialog.Builder.showLeaf(): AlertDialog {

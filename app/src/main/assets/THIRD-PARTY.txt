@@ -1,7 +1,7 @@
-Leaf bundles these components:
+Leaflet bundles these components:
 
 - WordNet 3.0 (Princeton University) - the offline dictionary. See WORDNET-LICENSE.txt.
 - libarchive (BSD license, https://www.libarchive.org) with Android Java bindings by Hai Zhang
   (Apache License 2.0, https://github.com/zhanghai/libarchive-android) - unpacks RAR/7z/tar comic archives.
   Includes zlib, bzip2, xz, lz4, zstd and mbedTLS crypto primitives (all permissively licensed).
-  This code runs entirely on the device; Leaf declares no network permission.
+  This code runs entirely on the device; Leaflet declares no network permission.

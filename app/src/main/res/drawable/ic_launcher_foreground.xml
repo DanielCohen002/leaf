@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Leaf: the left half is a leaf, the right half is a page with a folded corner. -->
+<!-- Leaflet: the left half is a leaf, the right half is a page with a folded corner. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
