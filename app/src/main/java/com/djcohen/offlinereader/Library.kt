@@ -97,7 +97,7 @@ class Library(private val context: Context) {
     fun remove(e: Entry) {
         file(e).delete()
         save(entries().filter { it.id != e.id })
-        sp.edit().remove("pos_${e.id}").apply()
+        sp.edit().remove("pos_${e.id}").remove("postitle_${e.id}").apply()
     }
 
     /** Reading position: chapter index and character offset inside that chapter. */
@@ -107,7 +107,16 @@ class Library(private val context: Context) {
         return (parts.getOrNull(0)?.toIntOrNull() ?: 0) to (parts.getOrNull(1)?.toIntOrNull() ?: 0)
     }
 
-    fun savePosition(id: String, chapter: Int, offset: Int) {
-        sp.edit().putString("pos_$id", "$chapter:$offset").apply()
+    /** [title] is the chapter's name, kept so the library can say where you left off. */
+    fun savePosition(id: String, chapter: Int, offset: Int, title: String? = null) {
+        val ed = sp.edit().putString("pos_$id", "$chapter:$offset")
+        if (title != null) ed.putString("postitle_$id", title)
+        ed.apply()
+    }
+
+    fun positionTitle(id: String): String? = sp.getString("postitle_$id", null)
+
+    fun setPositionTitle(id: String, title: String) {
+        sp.edit().putString("postitle_$id", title).apply()
     }
 }

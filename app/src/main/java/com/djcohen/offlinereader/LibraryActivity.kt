@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
+import android.text.TextUtils
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -55,7 +56,9 @@ class LibraryActivity : Activity() {
                         textSize = 17f; maxLines = 2; setTextColor(INK)
                         typeface = Typeface.create("serif", Typeface.BOLD)
                     })
-                    addView(TextView(context).apply { textSize = 13f; setTextColor(MUTED) })
+                    addView(TextView(context).apply {
+                        textSize = 13f; setTextColor(MUTED); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                    })
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             }
             val col = row.getChildAt(1) as LinearLayout
@@ -64,7 +67,7 @@ class LibraryActivity : Activity() {
             val (_, offset) = library.position(e.id)
             val resume = when {
                 ImageBooks.isImageFormat(e.ext) -> if (offset > 0) "  ·  continue from page ${offset + 1}" else ""
-                chapter > 0 -> "  ·  continue from section ${chapter + 1}"
+                chapter > 0 -> "  ·  continue from ${library.positionTitle(e.id) ?: "section ${chapter + 1}"}"
                 else -> ""
             }
             (col.getChildAt(1) as TextView).text = e.ext.uppercase() + resume
@@ -157,6 +160,31 @@ class LibraryActivity : Activity() {
         adapter.notifyDataSetChanged()
         empty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
+        fillMissingTitles()
+    }
+
+    private var fillingTitles = false
+
+    /** Books saved before chapter names were remembered: look the name up once, in the background. */
+    private fun fillMissingTitles() {
+        if (fillingTitles) return
+        val missing = entries.filter {
+            !ImageBooks.isImageFormat(it.ext) && library.position(it.id).first > 0 && library.positionTitle(it.id) == null
+        }
+        if (missing.isEmpty()) return
+        fillingTitles = true
+        io.execute {
+            for (e in missing) {
+                try {
+                    val book = BookLoader.open(library.file(e), e.ext)
+                    book.chapterTitles.getOrNull(library.position(e.id).first)?.let { library.setPositionTitle(e.id, it) }
+                    book.close()
+                } catch (_: Throwable) {
+                    // leave it as "section N"
+                }
+            }
+            ui.post { fillingTitles = false; adapter.notifyDataSetChanged() }
+        }
     }
 
     private fun pickFiles() {
@@ -211,7 +239,7 @@ class LibraryActivity : Activity() {
             .setTitle(e.title)
             .setItems(arrayOf("Rename", "Remove")) { _, which -> if (which == 0) promptRename(e) else confirmDelete(e) }
             .setNegativeButton("Cancel", null)
-            .show()
+            .showLeaf()
     }
 
     private fun promptRename(e: Entry) {
@@ -224,7 +252,7 @@ class LibraryActivity : Activity() {
             .setView(LinearLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input, LinearLayout.LayoutParams(-1, -2)) })
             .setPositiveButton("Save") { _, _ -> library.rename(e, input.text.toString()); refresh() }
             .setNegativeButton("Cancel", null)
-            .show()
+            .showLeaf()
     }
 
     private fun confirmDelete(e: Entry) {
@@ -233,7 +261,7 @@ class LibraryActivity : Activity() {
             .setMessage(e.title)
             .setPositiveButton("Remove") { _, _ -> library.remove(e); refresh() }
             .setNegativeButton("Cancel", null)
-            .show()
+            .showLeaf()
     }
 
     companion object {

@@ -229,7 +229,7 @@ class ReaderActivity : Activity() {
                 d.dismiss(); setOverlay(false); loadChapter(which, 0)
             }
             .setNegativeButton("Close", null)
-            .show()
+            .showLeaf()
     }
 
     // --- selection actions -----------------------------------------------------------------
@@ -293,7 +293,7 @@ class ReaderActivity : Activity() {
         AlertDialog.Builder(this)
             .setView(ScrollView(this).apply { addView(text) })
             .setPositiveButton("Close", null)
-            .show()
+            .showLeaf()
     }
 
     // --- settings --------------------------------------------------------------------------
@@ -352,7 +352,7 @@ class ReaderActivity : Activity() {
         check("Keep screen on", prefs.keepScreenOn) { prefs.keepScreenOn = it; applyStyle() }
 
         AlertDialog.Builder(this).setTitle("Reading settings").setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Done", null).show()
+            .setPositiveButton("Done", null).showLeaf()
     }
 
     // --- hardware keys ---------------------------------------------------------------------
@@ -376,7 +376,7 @@ class ReaderActivity : Activity() {
     // --- lifecycle -------------------------------------------------------------------------
 
     private fun savePosition() {
-        if (book != null && !loading) library.savePosition(entry.id, chapter, page.currentOffset)
+        if (book != null && !loading) library.savePosition(entry.id, chapter, page.currentOffset, book?.chapterTitles?.getOrNull(chapter))
     }
 
     override fun onPause() {

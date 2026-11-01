@@ -468,7 +468,7 @@ class ImageReaderActivity : Activity() {
             alpha = 0.6f; textSize = 13f; setPadding(0, dp(12), 0, 0)
         })
         AlertDialog.Builder(this).setTitle("Reading settings").setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Done", null).show()
+            .setPositiveButton("Done", null).showLeaf()
     }
 
     // --- hardware keys ---------------------------------------------------------------------
