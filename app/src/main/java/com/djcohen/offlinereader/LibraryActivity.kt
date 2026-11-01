@@ -169,9 +169,16 @@ class LibraryActivity : Activity() {
             setPadding(dp(12), dp(8), dp(16), dp(8))
         }
         header.addView(logo(), LinearLayout.LayoutParams(dp(64), dp(64)))
-        header.addView(TextView(this).apply {
-            text = "Leaflet"; textSize = 30f; setTextColor(PAGE)
-            typeface = Typeface.create("serif", Typeface.BOLD)
+        val version = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { null }
+        header.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = "Leaflet"; textSize = 30f; setTextColor(PAGE)
+                typeface = Typeface.create("serif", Typeface.BOLD)
+            })
+            if (version != null) addView(TextView(context).apply {
+                text = "version $version"; textSize = 12f; setTextColor(0xFFB9D1BF.toInt())
+            })
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         toggle = ImageView(this).apply {
             setColorFilter(PAGE)
