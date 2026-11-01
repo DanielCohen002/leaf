@@ -338,7 +338,7 @@ class ReaderActivity : Activity() {
 
         val indentLabel = label("Paragraph indent: ${indentText(prefs.indent)}")
         box.addView(SeekBar(this).apply {
-            max = 30; progress = prefs.indent
+            max = 40; progress = prefs.indent
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) { indentLabel.text = "Paragraph indent: ${indentText(p)}" }
                 override fun onStartTrackingTouch(s: SeekBar?) {}

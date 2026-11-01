@@ -258,7 +258,7 @@ class PageView(context: Context) : View(context) {
         page = if (offset < 0) pageStartLines.size - 1 else pageForOffset(offset)
     }
 
-    /** Indent the first line of each real paragraph (short lines such as headings and captions are left alone). */
+    /** Indent the first line of every prose paragraph, including short ones such as lines of dialogue. */
     private fun withIndent(src: CharSequence): CharSequence {
         if (indentPx <= 0 || src.isEmpty()) return src
         val sb = android.text.SpannableStringBuilder(src)
@@ -266,12 +266,28 @@ class PageView(context: Context) : View(context) {
         while (i < sb.length) {
             var j = sb.indexOf('\n', i)
             if (j < 0) j = sb.length
-            if (j - i > 60) {
+            if (j > i && isProse(sb, i, j)) {
                 sb.setSpan(android.text.style.LeadingMarginSpan.Standard(indentPx, 0), i, minOf(j + 1, sb.length), Spanned.SPAN_PARAGRAPH)
             }
             i = j + 1
         }
         return sb
+    }
+
+    /** False for things that should not be indented: headings, centered lines, lists, quotes, scene breaks, pictures. */
+    private fun isProse(sb: android.text.SpannableStringBuilder, start: Int, end: Int): Boolean {
+        var letters = 0
+        for (k in start until end) {
+            if (sb[k].isLetter()) { letters++; if (letters >= 2) break }
+        }
+        if (letters < 2) return false                                   // "* * *", a picture, a page number
+        if (sb.getSpans(start, end, android.text.style.RelativeSizeSpan::class.java).any { it.sizeChange > 1.05f }) return false
+        if (sb.getSpans(start, end, android.text.style.AlignmentSpan::class.java).any { it.alignment != Layout.Alignment.ALIGN_NORMAL }) return false
+        if (sb.getSpans(start, end, android.text.style.BulletSpan::class.java).isNotEmpty()) return false
+        if (sb.getSpans(start, end, android.text.style.QuoteSpan::class.java).isNotEmpty()) return false
+        // A short line that doesn't end like a sentence is a title or label (plain-text books have no heading markup).
+        if (end - start < 40 && sb[end - 1] !in ".!?,;:”\"’'…)—-") return false
+        return true
     }
 
     private fun pageForOffset(offset: Int): Int {
