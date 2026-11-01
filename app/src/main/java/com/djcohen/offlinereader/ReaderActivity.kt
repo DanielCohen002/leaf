@@ -137,7 +137,7 @@ class ReaderActivity : Activity() {
                 val (ch, off) = library.position(entry.id)
                 ui.post {
                     book = b
-                    topBar.text = b.title
+                    topBar.text = entry.title
                     loadChapter(ch.coerceIn(0, b.chapterTitles.size - 1), off)
                 }
             } catch (t: Throwable) {

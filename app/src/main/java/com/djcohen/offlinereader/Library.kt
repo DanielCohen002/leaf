@@ -45,14 +45,18 @@ class Library(private val context: Context) {
         val dest = File(dir, "$id.$ext")
         context.contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { input.copyTo(it) } }
         try {
+            // Books that carry their own title (EPUB, MOBI, FB2...) use it; the rest are named after the original
+            // file. The stored copy is called "<id>.<ext>", so a title equal to the id means "no real title".
+            val fromName = display.substringBeforeLast('.').replace('_', ' ').trim()
+            fun pick(bookTitle: String) = bookTitle.trim().takeIf { it.isNotBlank() && it != id && it != id.replace('_', ' ') } ?: fromName
             val title: String
             if (ImageBooks.isImageFormat(ext)) {
                 val book = ImageBooks.open(dest, ext)
-                title = book.title.ifBlank { display.substringBeforeLast('.') }
+                title = pick(book.title)
                 book.close()
             } else {
                 val book = BookLoader.open(dest, ext)
-                title = book.title.ifBlank { display.substringBeforeLast('.') }
+                title = pick(book.title)
                 book.close()
             }
             val entry = Entry(id, dest.name, title, ext)
@@ -62,6 +66,12 @@ class Library(private val context: Context) {
             dest.delete()
             throw IllegalArgumentException("Couldn't read $display: ${t.message}")
         }
+    }
+
+    fun rename(e: Entry, newTitle: String) {
+        val t = newTitle.trim()
+        if (t.isEmpty()) return
+        save(entries().map { if (it.id == e.id) it.copy(title = t) else it })
     }
 
     fun remove(e: Entry) {

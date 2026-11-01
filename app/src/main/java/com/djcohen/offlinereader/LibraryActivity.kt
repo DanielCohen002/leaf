@@ -77,7 +77,7 @@ class LibraryActivity : Activity() {
         list.emptyView = empty
         list.adapter = adapter
         list.setOnItemClickListener { _, _, pos, _ -> openBook(entries[pos]) }
-        list.setOnItemLongClickListener { _, _, pos, _ -> confirmDelete(entries[pos]); true }
+        list.setOnItemLongClickListener { _, _, pos, _ -> showOptions(entries[pos]); true }
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(empty, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
@@ -148,6 +148,27 @@ class LibraryActivity : Activity() {
     private fun openBook(e: Entry) {
         val target = if (ImageBooks.isImageFormat(e.ext)) ImageReaderActivity::class.java else ReaderActivity::class.java
         startActivity(Intent(this, target).putExtra(ReaderActivity.EXTRA_ID, e.id))
+    }
+
+    private fun showOptions(e: Entry) {
+        AlertDialog.Builder(this)
+            .setTitle(e.title)
+            .setItems(arrayOf("Rename", "Remove")) { _, which -> if (which == 0) promptRename(e) else confirmDelete(e) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun promptRename(e: Entry) {
+        val input = android.widget.EditText(this).apply {
+            setText(e.title); setSelection(text.length); isSingleLine = false; maxLines = 3
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        AlertDialog.Builder(this)
+            .setTitle("Rename")
+            .setView(LinearLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input, LinearLayout.LayoutParams(-1, -2)) })
+            .setPositiveButton("Save") { _, _ -> library.rename(e, input.text.toString()); refresh() }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun confirmDelete(e: Entry) {
