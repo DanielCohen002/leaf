@@ -30,8 +30,15 @@ interface Book {
     fun load(index: Int, maxW: Int, maxH: Int): Spanned
     /** A cover picture for the library grid, or null if the book has none (the library draws a placeholder). */
     fun cover(maxW: Int, maxH: Int): Bitmap? = null
+    /** Where an internal link (the href of a tapped link) leads, or null if it can't be worked out. */
+    fun resolveLink(chapter: Int, href: String): LinkTarget? = null
+    /** Character offset of the named spot [id] in [chapter]; known once that chapter has been loaded. */
+    fun anchorOffset(chapter: Int, id: String): Int? = null
     fun close()
 }
+
+/** The destination of a link: a chapter plus (optionally) a named spot in it. [external] links go to the web. */
+class LinkTarget(val chapter: Int, val anchor: String?, val external: Boolean = false)
 
 object BookLoader {
     val textExtensions = setOf("epub", "txt", "text", "html", "htm", "xhtml", "md", "markdown", "fb2", "mobi", "azw", "azw3", "prc")
@@ -59,25 +66,73 @@ internal object HtmlText {
     private val svgImage = Regex("(?is)<image\\b[^>]*?href\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>")
     private val prolog = Regex("(?is)<\\?xml.*?\\?>|<!DOCTYPE[^>]*>")
 
-    fun toSpanned(html: String, images: ((String, Int, Int) -> Bitmap?)?, maxW: Int, maxH: Int): Spanned {
-        val cleaned = html.replace(prolog, "").replace(svgImage, "<img src=\"$1\"/>").replace(head, "").replace(style, "").replace(script, "")
+    // Start tags, and the id / name attributes that make a spot in the text linkable.
+    private val startTag = Regex("<([A-Za-z][A-Za-z0-9:]*)(\\s[^>]*)?>")
+    private val idAttr = Regex("\\s(id|name)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')", RegexOption.IGNORE_CASE)
+    private val noMarkerTags = setOf("table", "tbody", "thead", "tfoot", "tr", "ul", "ol", "dl", "select", "html")
+
+    /**
+     * The HTML converter discards id attributes, so each one is replaced by an empty marker element (<lfid7></lfid7>)
+     * that the tag handler turns into a character offset. [ids] receives the ids in marker order.
+     */
+    private fun markAnchors(html: String, ids: MutableList<String>): String =
+        startTag.replace(html) { m ->
+            val tag = m.groupValues[1].lowercase()
+            if (tag in noMarkerTags) return@replace m.value
+            var id: String? = null
+            for (a in idAttr.findAll(m.groupValues[2])) {
+                val isName = a.groupValues[1].equals("name", ignoreCase = true)
+                if (isName && tag != "a") continue          // name= only means an anchor on <a>
+                id = a.groupValues[2].ifEmpty { a.groupValues[3] }
+                if (!isName) break
+            }
+            if (id.isNullOrEmpty()) m.value else {
+                ids += id
+                m.value + "<lfid${ids.size - 1}></lfid${ids.size - 1}>"
+            }
+        }
+
+    /** [anchors], if given, receives the character offset of every id in the produced text. */
+    fun toSpanned(
+        html: String, images: ((String, Int, Int) -> Bitmap?)?, maxW: Int, maxH: Int,
+        anchors: MutableMap<String, Int>? = null,
+    ): Spanned {
+        var cleaned = html.replace(prolog, "").replace(svgImage, "<img src=\"$1\"/>").replace(head, "").replace(style, "").replace(script, "")
+        val ids = ArrayList<String>()
+        if (anchors != null) cleaned = markAnchors(cleaned, ids)
         val getter = Html.ImageGetter { src ->
             val bmp = images?.invoke(src, maxW, maxH)
             if (bmp == null) null else BitmapDrawable(null, bmp).apply { setBounds(0, 0, bmp.width, bmp.height) }
         }
-        val spanned = Html.fromHtml(cleaned, Html.FROM_HTML_MODE_COMPACT, getter, null)
-        return tidy(SpannableStringBuilder(spanned))
+        val tagHandler = if (anchors == null) null else Html.TagHandler { opening, tag, output, _ ->
+            if (opening && tag.startsWith("lfid")) {
+                val id = tag.substring(4).toIntOrNull()?.let { ids.getOrNull(it) }
+                if (id != null && id !in anchors) anchors[id] = output.length
+            }
+        }
+        val spanned = Html.fromHtml(cleaned, Html.FROM_HTML_MODE_COMPACT, getter, tagHandler)
+        // tidy() trims leading whitespace, which moves every offset; shift the anchors to match.
+        val lead = spanned.indexOfFirst { !it.isWhitespace() }.let { if (it < 0) spanned.length else it }
+        val result = tidy(SpannableStringBuilder(spanned))
+        if (anchors != null) {
+            for (k in anchors.keys.toList()) anchors[k] = ((anchors[k] ?: 0) - lead).coerceIn(0, result.length)
+        }
+        return result
     }
 
     /**
      * Render one HTML page. A page that is just a single picture (a cover) is enlarged to fill the page and centered;
      * [loader] fetches an image by its source string, scaled to the box, enlarging when the last argument is true.
      */
-    fun page(html: String, maxW: Int, maxH: Int, loader: (String, Int, Int, Boolean) -> Bitmap?): Spanned {
+    fun page(
+        html: String, maxW: Int, maxH: Int,
+        anchors: MutableMap<String, Int>? = null,
+        loader: (String, Int, Int, Boolean) -> Bitmap?,
+    ): Spanned {
         val imageOnly = Regex("(?i)<(img|image)\\b").findAll(html).count() == 1 &&
             html.replace(Regex("(?is)<head\\b.*?</head>|<style\\b.*?</style>|<[^>]*>"), "").trim().length < 80
         val h = if (imageOnly) (maxH * 1.08f).toInt() else maxH
-        val text = toSpanned(html, { src, w, hh -> loader(src, w, hh, imageOnly) }, maxW, h)
+        val text = toSpanned(html, { src, w, hh -> loader(src, w, hh, imageOnly) }, maxW, h, anchors)
         if (!imageOnly) return text
         return SpannableStringBuilder(text).also {
             it.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), 0, it.length, Spanned.SPAN_PARAGRAPH)
@@ -354,7 +409,36 @@ class EpubBook(file: File) : Book {
         }
         val dir = path.substringBeforeLast('/', "")
         val html = readText(path) ?: ""
-        return HtmlText.page(html, maxW, maxH) { src, w, h, up -> loadImage(resolve(dir, src), w, h, up) }
+        val anchors = HashMap<String, Int>()
+        val text = HtmlText.page(html, maxW, maxH, anchors) { src, w, h, up -> loadImage(resolve(dir, src), w, h, up) }
+        chapterAnchors[index] = anchors
+        return text
+    }
+
+    // --- internal links (contents page, footnotes, cross-references) ------------------------
+
+    private val chapterAnchors = java.util.concurrent.ConcurrentHashMap<Int, Map<String, Int>>()
+
+    override fun anchorOffset(chapter: Int, id: String): Int? {
+        val map = chapterAnchors[chapter] ?: return null
+        return map[id] ?: map[Uri.decode(id)]
+    }
+
+    override fun resolveLink(chapter: Int, href: String): LinkTarget? {
+        val h = href.trim()
+        if (h.isEmpty()) return null
+        if (Regex("^[A-Za-z][A-Za-z0-9+.-]*:").containsMatchIn(h)) return LinkTarget(-1, null, external = true)   // http:, mailto:, ...
+        val fragment = if ('#' in h) Uri.decode(h.substringAfter('#')) else null
+        val pathPart = h.substringBefore('#')
+        if (pathPart.isEmpty()) return LinkTarget(chapter, fragment)                  // "#note1": same chapter
+        val dir = spine.getOrNull(chapter)?.substringBeforeLast('/', "") ?: ""
+        val target = resolve(dir, pathPart)
+        val index = spine.indexOf(target)
+        if (index >= 0) return LinkTarget(index, fragment)
+        // Fall back to matching just the file name (odd relative paths, different letter case).
+        val name = target.substringAfterLast('/').lowercase()
+        val byName = spine.indexOfFirst { it.substringAfterLast('/').lowercase() == name }
+        return if (byName >= 0) LinkTarget(byName, fragment) else null
     }
 
     private fun loadImage(path: String, maxW: Int, maxH: Int, upscale: Boolean = false): Bitmap? {

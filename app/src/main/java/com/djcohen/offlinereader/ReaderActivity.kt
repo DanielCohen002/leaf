@@ -43,6 +43,9 @@ class ReaderActivity : Activity() {
     private var chapter = 0
     private var loading = true
     private var overlayVisible = false
+    private lateinit var backChip: TextView
+    private var backTarget: Pair<Int, Int>? = null      // (chapter, offset) to return to after following a link
+    private var backToken = 0
     private val io = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private var barTop = 0
@@ -61,6 +64,7 @@ class ReaderActivity : Activity() {
 
         val root = FrameLayout(this)
         page = PageView(this).apply {
+            onLink = { href -> openLink(href) }
             onZone = { z ->
                 when (z) {
                     PageView.Zone.NEXT -> turn(true)
@@ -92,6 +96,18 @@ class ReaderActivity : Activity() {
         barButton("Aa") { showSettings() }
         barButton("Chapter ›") { skipChapter(1) }
         root.addView(bottomBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        backChip = TextView(this).apply {
+            text = "\u21A9  Back to where you were"
+            textSize = 14f; setTextColor(0xFF1E3A2A.toInt())
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(dp(18), dp(11), dp(18), dp(11))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFF6CC070.toInt()); cornerRadius = dp(24).toFloat()
+            }
+            visibility = View.GONE
+            setOnClickListener { goBack() }
+        }
+        root.addView(backChip, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(72) })
         selBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xF0202020.toInt()); visibility = View.GONE
@@ -180,7 +196,7 @@ class ReaderActivity : Activity() {
     // --- navigation ------------------------------------------------------------------------
 
     /** [offset] < 0 opens the chapter on its last page. */
-    private fun loadChapter(index: Int, offset: Int) {
+    private fun loadChapter(index: Int, offset: Int, anchor: String? = null) {
         val b = book ?: return
         loading = true
         val w = page.contentWidth
@@ -191,18 +207,61 @@ class ReaderActivity : Activity() {
             } catch (t: Throwable) {
                 android.text.SpannableString("Couldn't load this section:\n${t.message}")
             }
+            // A link to "#note3" lands on that spot, which is only known once the chapter has been built.
+            val start = if (anchor != null) (b.anchorOffset(index, anchor) ?: offset) else offset
             ui.post {
                 chapter = index
                 page.footerText = b.chapterTitles[index]
-                page.setContent(text, offset)
+                page.setContent(text, start)
                 loading = false
             }
         }
     }
 
+    /** Follow a tapped link: jump within the book, remembering where we were so "Back" can return. */
+    private fun openLink(href: String) {
+        val b = book ?: return
+        if (loading) return
+        val target = b.resolveLink(chapter, href)
+        when {
+            target == null -> Toast.makeText(this, "Couldn't find where that link goes", Toast.LENGTH_SHORT).show()
+            target.external -> Toast.makeText(this, "That link goes to a web page. Leaf stays offline.", Toast.LENGTH_SHORT).show()
+            else -> {
+                val from = chapter to page.currentOffset
+                if (target.chapter == chapter) {
+                    val spot = target.anchor?.let { b.anchorOffset(chapter, it) } ?: 0
+                    page.jumpToOffset(spot)
+                } else {
+                    loadChapter(target.chapter, 0, target.anchor)
+                }
+                showBack(from)
+            }
+        }
+    }
+
+    private fun showBack(from: Pair<Int, Int>) {
+        backTarget = from
+        val token = ++backToken
+        backChip.visibility = View.VISIBLE
+        ui.postDelayed({ if (token == backToken) hideBack() }, 12000)   // fades away if you carry on reading
+    }
+
+    private fun hideBack() {
+        backToken++
+        backTarget = null
+        if (::backChip.isInitialized) backChip.visibility = View.GONE
+    }
+
+    private fun goBack() {
+        val (c, offset) = backTarget ?: return
+        hideBack()
+        if (c == chapter) page.jumpToOffset(offset) else loadChapter(c, offset)
+    }
+
     private fun turn(forward: Boolean) {
         val b = book ?: return
         if (loading) return
+        hideBack()
         if (overlayVisible) setOverlay(false)
         if (forward) {
             if (!page.nextPage()) {

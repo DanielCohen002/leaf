@@ -23,6 +23,8 @@ class PageView(context: Context) : View(context) {
     enum class Zone { PREV, MENU, NEXT }
 
     var onZone: ((Zone) -> Unit)? = null
+    /** Called with the href of a link the reader tapped. */
+    var onLink: ((String) -> Unit)? = null
     var footerText: String = ""
 
     private val density = resources.displayMetrics.density
@@ -258,6 +260,39 @@ class PageView(context: Context) : View(context) {
         page = if (offset < 0) pageStartLines.size - 1 else pageForOffset(offset)
     }
 
+    /** Show the page (or scroll position) containing character [offset]; used when following a link or going back. */
+    fun jumpToOffset(offset: Int) {
+        clearSelection()
+        val l = layout ?: return
+        val o = offset.coerceIn(0, text.length)
+        if (scrollMode) {
+            scroller.forceFinished(true)
+            scrollPx = l.getLineTop(l.getLineForOffset(o)).coerceIn(0, maxScroll())
+        } else {
+            page = pageForOffset(o)
+        }
+        invalidate()
+    }
+
+    /** The href of the link under the screen point (x, y), or null if the point isn't on link text. */
+    private fun linkAt(x: Float, y: Float): String? {
+        val l = layout ?: return null
+        val spanned = text as? Spanned ?: return null
+        if (pageStartLines.isEmpty() || l.lineCount == 0) return null
+        val ly = y - (insetT + vMargin) + topY()
+        val line = l.getLineForVertical(ly.toInt())
+        if (line < firstLine() || line > lastLine()) return null
+        val lx = x - (insetL + margin)
+        if (lx < l.getLineLeft(line) - slop || lx > l.getLineRight(line) + slop) return null
+        val offset = l.getOffsetForHorizontal(line, lx)
+        for (o in intArrayOf(offset, offset - 1)) {
+            if (o < 0 || o >= spanned.length) continue
+            val spans = spanned.getSpans(o, o + 1, android.text.style.URLSpan::class.java)
+            if (spans.isNotEmpty()) return spans[0].url
+        }
+        return null
+    }
+
     /** Indent the first line of every prose paragraph, including short ones such as lines of dialogue. */
     private fun withIndent(src: CharSequence): CharSequence {
         if (indentPx <= 0 || src.isEmpty()) return src
@@ -447,6 +482,11 @@ class PageView(context: Context) : View(context) {
                 if (hasSelection) { clearSelection(); return true }   // a tap just dismisses the selection
                 val dx = e.x - downX
                 val dy = e.y - downY
+                // A tap on a link follows the link, before any page-turn zone gets a say.
+                if (abs(dx) < 20 * density && abs(dy) < 20 * density) {
+                    val href = linkAt(e.x, e.y)
+                    if (href != null) { onLink?.invoke(href); return true }
+                }
                 if (!scrollMode && abs(dx) > 70 * density && abs(dx) > abs(dy) * 1.5f) {
                     onZone?.invoke(if (dx < 0) Zone.NEXT else Zone.PREV)
                 } else if (abs(dx) < 20 * density && abs(dy) < 20 * density) {
