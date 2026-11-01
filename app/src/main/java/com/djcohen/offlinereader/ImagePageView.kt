@@ -85,6 +85,11 @@ class ImagePageView(context: Context) : View(context) {
         matrix.postTranslate(dx, dy)
     }
 
+    private fun zoneAt(x: Float): PageView.Zone {
+        val f = x / width
+        return if (f < 0.3f) PageView.Zone.PREV else if (f > 0.7f) PageView.Zone.NEXT else PageView.Zone.MENU
+    }
+
     private fun zoomed() = scale() > fitScale * 1.05f
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -115,7 +120,18 @@ class ImagePageView(context: Context) : View(context) {
             return false
         }
 
+        // Side taps turn the page right away (no waiting to see if a second tap follows).
+        override fun onSingleTapUp(e: MotionEvent): Boolean {
+            val zone = zoneAt(e.x)
+            if (zone == PageView.Zone.MENU) return false
+            onZone?.invoke(zone)
+            return true
+        }
+
         override fun onDoubleTap(e: MotionEvent): Boolean {
+            // A quick second tap at the side is just another page turn; zooming is a middle-of-the-screen double-tap.
+            val zone = zoneAt(e.x)
+            if (zone != PageView.Zone.MENU) { onZone?.invoke(zone); return true }
             val b = bitmap ?: return true
             if (zoomed()) {
                 fit()
@@ -131,8 +147,7 @@ class ImagePageView(context: Context) : View(context) {
         }
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            val f = e.x / width
-            onZone?.invoke(if (f < 0.3f) PageView.Zone.PREV else if (f > 0.7f) PageView.Zone.NEXT else PageView.Zone.MENU)
+            if (zoneAt(e.x) == PageView.Zone.MENU) onZone?.invoke(PageView.Zone.MENU)
             return true
         }
     })

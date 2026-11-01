@@ -177,6 +177,11 @@ class ScrollImageView(context: Context) : View(context) {
         afterScroll()
     }
 
+    private fun zoneAt(y: Float): PageView.Zone {
+        val f = y / height
+        return if (f < 0.3f) PageView.Zone.PREV else if (f > 0.7f) PageView.Zone.NEXT else PageView.Zone.MENU
+    }
+
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(d: ScaleGestureDetector): Boolean {
             setZoom(zoom * d.scaleFactor, d.focusX, d.focusY)
@@ -200,14 +205,22 @@ class ScrollImageView(context: Context) : View(context) {
             return true
         }
 
+        override fun onSingleTapUp(e: MotionEvent): Boolean {
+            val zone = zoneAt(e.y)
+            if (zone == PageView.Zone.MENU) return false
+            onZone?.invoke(zone)
+            return true
+        }
+
         override fun onDoubleTap(e: MotionEvent): Boolean {
+            val zone = zoneAt(e.y)
+            if (zone != PageView.Zone.MENU) { onZone?.invoke(zone); return true }
             if (zoom > 1.05f) setZoom(1f, e.x, e.y) else setZoom(2.2f, e.x, e.y)
             return true
         }
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            val f = e.y / height
-            onZone?.invoke(if (f < 0.3f) PageView.Zone.PREV else if (f > 0.7f) PageView.Zone.NEXT else PageView.Zone.MENU)
+            if (zoneAt(e.y) == PageView.Zone.MENU) onZone?.invoke(PageView.Zone.MENU)
             return true
         }
     })
