@@ -39,6 +39,11 @@ class ScrollImageView(context: Context) : View(context) {
     private var lastReported = -1
     private var pendingStart = -1
 
+    /** Color shown for a page that hasn't loaded yet; should resemble the pages so loading is not jarring. */
+    var placeholderColor: Int
+        get() = placeholder.color
+        set(v) { placeholder.color = v; invalidate() }
+
     var pageBackground = 0xFF000000.toInt()
         set(v) { field = v; invalidate() }
 

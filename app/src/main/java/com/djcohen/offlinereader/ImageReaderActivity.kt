@@ -60,7 +60,7 @@ class ImageReaderActivity : Activity() {
     private val cache = object : LruCache<Int, Bitmap>(budget) {          // single pages / spreads, keyed by first page
         override fun sizeOf(key: Int, value: Bitmap) = value.byteCount
     }
-    private val scrollCache = object : LruCache<Int, Bitmap>(budget) {    // pages for continuous scrolling
+    private val scrollCache = object : LruCache<Int, Bitmap>((Runtime.getRuntime().maxMemory() / 3).toInt()) {    // pages for continuous scrolling
         override fun sizeOf(key: Int, value: Bitmap) = value.byteCount
     }
     private val requested = HashSet<Int>()                                // scroll pages being loaded (UI thread only)
@@ -99,7 +99,16 @@ class ImageReaderActivity : Activity() {
                     PageView.Zone.PREV -> turn(false)
                 }
             }
-            onPageChanged = { p -> if (layoutMode == 2) { page = p; updateLabels() } }
+            onPageChanged = { p ->
+                if (layoutMode == 2) {
+                    page = p
+                    updateLabels()
+                    // Load the pages just ahead (and one behind) so they are ready before they scroll into view.
+                    for (i in (p - 1)..(p + 4)) {
+                        if (i in 0 until (book?.pageCount ?: 0) && scrollCache.get(i) == null) requestScrollPage(i)
+                    }
+                }
+            }
         }
         root.addView(scrollView, FrameLayout.LayoutParams(-1, -1))
 
@@ -189,6 +198,11 @@ class ImageReaderActivity : Activity() {
     private fun applyPrefs() {
         view.setInvert(prefs.invertImages)
         scrollView.setInvert(prefs.invertImages)
+        scrollView.placeholderColor = when {
+            entry.ext != "pdf" -> 0xFF1B1B1B.toInt()
+            prefs.invertImages -> 0xFF141414.toInt()
+            else -> 0xFFEFEFEF.toInt()
+        }
         if (prefs.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -375,9 +389,9 @@ class ImageReaderActivity : Activity() {
     private fun requestScrollPage(i: Int) {
         val b = book ?: return
         if (!requested.add(i)) return
-        val w = (scrollView.width * 2).coerceIn(600, 2600)
+        val w = (scrollView.width * 1.5f).toInt().coerceIn(600, 1800)
         io.execute {
-            val wanted = try { i in scrollView.visibleRange(3) } catch (_: Throwable) { true }
+            val wanted = try { i in scrollView.visibleRange(5) } catch (_: Throwable) { true }
             val bmp = if (wanted && !isDestroyed) b.render(i, w, w * 4) else null
             ui.post {
                 requested.remove(i)
