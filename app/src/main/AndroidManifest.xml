@@ -24,8 +24,21 @@
                 <data android:mimeType="application/epub+zip" />
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="text/html" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/x-mobipocket-ebook" />
+                <data android:mimeType="application/vnd.amazon.ebook" />
+                <data android:mimeType="application/x-fictionbook+xml" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ImageReaderActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:exported="false" />
+        <!-- No networking components, services or receivers anywhere in this app. -->
 
         <activity
             android:name=".ReaderActivity"

@@ -42,8 +42,13 @@ class LibraryActivity : Activity() {
             }
             (row.getChildAt(0) as TextView).text = e.title
             val (chapter, _) = library.position(e.id)
-            (row.getChildAt(1) as TextView).text =
-                e.ext.uppercase() + if (chapter > 0) "  ·  continue from section ${chapter + 1}" else ""
+            val (_, offset) = library.position(e.id)
+            val resume = when {
+                ImageBooks.isImageFormat(e.ext) -> if (offset > 0) "  ·  continue from page ${offset + 1}" else ""
+                chapter > 0 -> "  ·  continue from section ${chapter + 1}"
+                else -> ""
+            }
+            (row.getChildAt(1) as TextView).text = e.ext.uppercase() + resume
             return row
         }
     }
@@ -66,7 +71,7 @@ class LibraryActivity : Activity() {
 
         list = ListView(this)
         empty = TextView(this).apply {
-            text = "No books yet.\nTap “Add books” and choose EPUB, TXT or HTML files from your phone.\n\nThis app has no internet access at all."
+            text = "No books yet.\nTap “Add books” and choose EPUB, MOBI, FB2, PDF, CBZ comics, TXT, HTML or Markdown files from your phone.\n\nThis app has no internet access at all."
             textSize = 15f; gravity = Gravity.CENTER; setPadding(dp(32), dp(32), dp(32), dp(32)); alpha = 0.7f
         }
         list.emptyView = empty
@@ -141,7 +146,8 @@ class LibraryActivity : Activity() {
     }
 
     private fun openBook(e: Entry) {
-        startActivity(Intent(this, ReaderActivity::class.java).putExtra(ReaderActivity.EXTRA_ID, e.id))
+        val target = if (ImageBooks.isImageFormat(e.ext)) ImageReaderActivity::class.java else ReaderActivity::class.java
+        startActivity(Intent(this, target).putExtra(ReaderActivity.EXTRA_ID, e.id))
     }
 
     private fun confirmDelete(e: Entry) {

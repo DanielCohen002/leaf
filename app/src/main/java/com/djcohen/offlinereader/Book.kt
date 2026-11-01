@@ -32,12 +32,16 @@ interface Book {
 }
 
 object BookLoader {
-    val supportedExtensions = setOf("epub", "txt", "text", "html", "htm", "xhtml")
+    val textExtensions = setOf("epub", "txt", "text", "html", "htm", "xhtml", "md", "markdown", "fb2", "mobi", "azw", "azw3", "prc")
+    val supportedExtensions: Set<String> get() = textExtensions + ImageBooks.extensions
 
     fun open(file: File, ext: String): Book = when (ext.lowercase()) {
         "epub" -> EpubBook(file)
         "txt", "text" -> TxtBook(file)
         "html", "htm", "xhtml" -> HtmlBook(file)
+        "md", "markdown" -> MarkdownBook(file)
+        "fb2" -> Fb2Book(file)
+        "mobi", "azw", "azw3", "prc" -> MobiBook(file)
         else -> throw IllegalArgumentException("Unsupported format: .$ext")
     }
 }
@@ -61,6 +65,21 @@ internal object HtmlText {
         }
         val spanned = Html.fromHtml(cleaned, Html.FROM_HTML_MODE_COMPACT, getter, null)
         return tidy(SpannableStringBuilder(spanned))
+    }
+
+    /**
+     * Render one HTML page. A page that is just a single picture (a cover) is enlarged to fill the page and centred;
+     * [loader] fetches an image by its source string, scaled to the box, enlarging when the last argument is true.
+     */
+    fun page(html: String, maxW: Int, maxH: Int, loader: (String, Int, Int, Boolean) -> Bitmap?): Spanned {
+        val imageOnly = Regex("(?i)<(img|image)\\b").findAll(html).count() == 1 &&
+            html.replace(Regex("(?is)<head\\b.*?</head>|<style\\b.*?</style>|<[^>]*>"), "").trim().length < 80
+        val h = if (imageOnly) (maxH * 1.08f).toInt() else maxH
+        val text = toSpanned(html, { src, w, hh -> loader(src, w, hh, imageOnly) }, maxW, h)
+        if (!imageOnly) return text
+        return SpannableStringBuilder(text).also {
+            it.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), 0, it.length, Spanned.SPAN_PARAGRAPH)
+        }
     }
 
     /** Strip publisher colours/sizes (they break dark mode and font choice), trim, indent paragraphs. */
@@ -336,31 +355,13 @@ class EpubBook(file: File) : Book {
         }
         val dir = path.substringBeforeLast('/', "")
         val html = readText(path) ?: ""
-        // A page that is just one picture (e.g. a cover) is blown up to fill the page and centred.
-        val imageOnly = Regex("(?i)<(img|image)\\b").findAll(html).count() == 1 &&
-            html.replace(Regex("(?is)<head\\b.*?</head>|<style\\b.*?</style>|<[^>]*>"), "").trim().length < 80
-        val h = if (imageOnly) (maxH * 1.08f).toInt() else maxH
-        val text = HtmlText.toSpanned(html, { src, w, hh -> loadImage(resolve(dir, src), w, hh, upscale = imageOnly) }, maxW, h)
-        if (!imageOnly) return text
-        return SpannableStringBuilder(text).also {
-            it.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), 0, it.length, Spanned.SPAN_PARAGRAPH)
-        }
+        return HtmlText.page(html, maxW, maxH) { src, w, h, up -> loadImage(resolve(dir, src), w, h, up) }
     }
 
     private fun loadImage(path: String, maxW: Int, maxH: Int, upscale: Boolean = false): Bitmap? {
         val e = zip.getEntry(path) ?: return null
         return try {
-            val bytes = zip.getInputStream(e).use { it.readBytes() }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0) return null
-            var sample = 1
-            while (bounds.outWidth / (sample * 2) >= maxW && bounds.outHeight / (sample * 2) >= maxH) sample *= 2
-            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-                ?: return null
-            val scale = minOf(maxW.toFloat() / bmp.width, maxH.toFloat() / bmp.height, if (upscale) Float.MAX_VALUE else 1f)
-            if (scale != 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt().coerceAtLeast(1), (bmp.height * scale).toInt().coerceAtLeast(1), true)
-            else bmp
+            ImageUtil.decode(zip.getInputStream(e).use { it.readBytes() }, maxW, maxH, upscale)
         } catch (_: Throwable) { null }
     }
 

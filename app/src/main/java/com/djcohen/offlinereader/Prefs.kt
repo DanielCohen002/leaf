@@ -51,6 +51,14 @@ class Prefs(context: Context) {
     var swapVolume: Boolean
         get() = sp.getBoolean("swapvol", false)
         set(v) = sp.edit().putBoolean("swapvol", v).apply()
+    /** Comics / PDF: right-to-left page order (manga). */
+    var rightToLeft: Boolean
+        get() = sp.getBoolean("rtl", false)
+        set(v) = sp.edit().putBoolean("rtl", v).apply()
+    /** Comics / PDF: invert page colours (night reading). */
+    var invertImages: Boolean
+        get() = sp.getBoolean("invimg", false)
+        set(v) = sp.edit().putBoolean("invimg", v).apply()
     var keepScreenOn: Boolean
         get() = sp.getBoolean("keepon", true)
         set(v) = sp.edit().putBoolean("keepon", v).apply()

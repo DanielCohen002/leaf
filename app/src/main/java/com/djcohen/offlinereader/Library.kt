@@ -45,9 +45,16 @@ class Library(private val context: Context) {
         val dest = File(dir, "$id.$ext")
         context.contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { input.copyTo(it) } }
         try {
-            val book = BookLoader.open(dest, ext)
-            val title = book.title.ifBlank { display.substringBeforeLast('.') }
-            book.close()
+            val title: String
+            if (ImageBooks.isImageFormat(ext)) {
+                val book = ImageBooks.open(dest, ext)
+                title = book.title.ifBlank { display.substringBeforeLast('.') }
+                book.close()
+            } else {
+                val book = BookLoader.open(dest, ext)
+                title = book.title.ifBlank { display.substringBeforeLast('.') }
+                book.close()
+            }
             val entry = Entry(id, dest.name, title, ext)
             save(entries() + entry)
             return entry
