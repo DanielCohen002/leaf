@@ -111,8 +111,18 @@ class PageView(context: Context) : View(context) {
         val bi = BreakIterator.getWordInstance()
         val str = text.toString()
         bi.setText(str)
-        val start = if (bi.isBoundary(o)) o else bi.preceding(o)
-        val end = bi.following(start).let { if (it == BreakIterator.DONE) str.length else it }
+        var start = if (bi.isBoundary(o)) o else bi.preceding(o)
+        var end = bi.following(start).let { if (it == BreakIterator.DONE) str.length else it }
+        // Landed on a space or punctuation: snap to the word just before it, else the one after.
+        if (str.substring(start, end.coerceAtMost(str.length)).none { it.isLetterOrDigit() }) {
+            val ps = bi.preceding(start)
+            if (ps != BreakIterator.DONE && str.substring(ps, start).any { it.isLetterOrDigit() }) {
+                end = start; start = ps
+            } else if (end < str.length) {
+                val ne = bi.following(end)
+                if (ne != BreakIterator.DONE) { start = end; end = ne }
+            }
+        }
         val word = str.substring(start, end.coerceAtMost(str.length))
         if (word.none { it.isLetterOrDigit() }) return false
         selStart = start.coerceAtLeast(range.first); selEnd = end.coerceAtMost(range.last)
@@ -128,7 +138,7 @@ class PageView(context: Context) : View(context) {
             line -= 1; x = l.getLineRight(line)
         }
         val first = pageStartLines[page]
-        val y = l.getLineBottom(line) - l.getLineTop(first) + insetT + vMargin
+        val y = l.getLineBaseline(line) + paint.descent().toInt() - l.getLineTop(first) + insetT + vMargin
         return floatArrayOf(x + insetL + margin, y.toFloat())
     }
 

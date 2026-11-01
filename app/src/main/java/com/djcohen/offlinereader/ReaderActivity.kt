@@ -283,7 +283,7 @@ class ReaderActivity : Activity() {
             }
         }
         val text = TextView(this).apply {
-            this.text = sb; textSize = 16f
+            this.text = sb; textSize = 16f; setTextColor(0xFFEDEDED.toInt())
             setPadding(dp(20), dp(8), dp(20), dp(8))
             setTextIsSelectable(true)
         }

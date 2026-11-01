@@ -20,6 +20,8 @@ class MobiBook(file: File) : Book {
     private val partTitles = ArrayList<String>()
     private var firstImage = -1
     private var charset: Charset = Charsets.UTF_8
+    private var ncxIdx = -1
+    private var ncx: List<Pair<Int, String>> = emptyList()   // (byte position in text, label)
     override val chapterTitles: List<String> get() = partTitles
 
     init {
@@ -77,6 +79,7 @@ class MobiBook(file: File) : Book {
             }
             if (hdrLen >= 0xE4 && r0.size >= 244) extraFlags = u32(r0, 240)
             if (version == 8 && r0.size >= 256) { kf8Frag = u32(r0, 248); kf8Skel = u32(r0, 252) }
+            if (hdrLen >= 0xE8 && r0.size >= 248) ncxIdx = u32(r0, 244)
 
             val exthFlags = u32(r0, 128)
             val exthPos = 16 + hdrLen
@@ -107,6 +110,7 @@ class MobiBook(file: File) : Book {
         }
         val text = out.toByteArray()
 
+        ncx = if (ncxIdx > 0) readNcx(ncxIdx) else emptyList()
         if (version == 8 && kf8Skel > 0 && kf8Frag > 0) buildKf8(text, kf8Skel, kf8Frag) else buildClassic(text)
 
         // Cover that isn't already the first thing shown.
@@ -172,15 +176,34 @@ class MobiBook(file: File) : Book {
 
     // --- classic MOBI ----------------------------------------------------------------------
 
-    private fun buildClassic(text: ByteArray) {
-        var html = String(text, charset)
-        html = html.replace(Regex("(?is)<img[^>]*?recindex\\s*=\\s*[\"']?0*(\\d+)[\"']?[^>]*>")) {
+    private fun fixImages(html: String): String =
+        html.replace(Regex("(?is)<img[^>]*?recindex\\s*=\\s*[\"']?0*(\\d+)[\"']?[^>]*>")) {
             "<img src=\"rec:${firstImage + it.groupValues[1].toInt() - 1}\"/>"
         }
-        var pieces = html.split(Regex("(?i)<mbp:pagebreak\\s*/?>"))
-        if (pieces.size <= 1) pieces = html.split(Regex("(?i)(?=<h[12][\\s>])"))
-        if (pieces.size <= 1) pieces = splitLarge(html, 60_000)
-        addMerged(pieces)
+
+    private fun buildClassic(text: ByteArray) {
+        // Work on a 1-char-per-byte view so that table-of-contents byte positions line up with string offsets.
+        val raw = String(text, Charsets.ISO_8859_1)
+        fun decode(a: Int, b: Int) = fixImages(String(raw.substring(a, b).toByteArray(Charsets.ISO_8859_1), charset))
+
+        if (ncx.size >= 2) {
+            val cuts = ncx.map { it.first.coerceIn(0, raw.length) }.distinct().sorted()
+            val bounds = (listOf(0) + cuts + listOf(raw.length)).distinct()
+            for (i in 0 until bounds.size - 1) {
+                val html = decode(bounds[i], bounds[i + 1])
+                val label = ncx.firstOrNull { it.first.coerceIn(0, raw.length) == bounds[i] }?.second
+                val hasImage = Regex("(?i)<img\\b").containsMatchIn(html)
+                if (plain(html).isEmpty() && !hasImage) continue
+                parts += html
+                partTitles += label ?: fallbackTitle(html, parts.size)
+            }
+            if (parts.isNotEmpty()) return
+        }
+
+        var pieces = raw.split(Regex("(?i)<mbp:pagebreak\\s*/?>"))
+        if (pieces.size <= 1) pieces = raw.split(Regex("(?i)(?=<h[12][\\s>])"))
+        if (pieces.size <= 1) pieces = splitLarge(raw, 60_000)
+        addMerged(pieces.map { fixImages(String(it.toByteArray(Charsets.ISO_8859_1), charset)) })
     }
 
     // --- KF8 / AZW3 ------------------------------------------------------------------------
@@ -188,8 +211,9 @@ class MobiBook(file: File) : Book {
     private class IndexEntry(val key: String, val tags: Map<Int, List<Int>>)
 
     private fun buildKf8(text: ByteArray, skelIdx: Int, fragIdx: Int) {
-        val skeletons = readIndex(skelIdx)
-        val fragments = readIndex(fragIdx)
+        val skeletons = readIndex(skelIdx).first
+        val fragments = readIndex(fragIdx).first
+        val ranges = ArrayList<IntRange>()
         var fragPtr = 0
         val htmlParts = ArrayList<String>()
         for (sk in skeletons) {
@@ -211,19 +235,28 @@ class MobiBook(file: File) : Book {
                 skeleton = skeleton.copyOfRange(0, at) + slice + skeleton.copyOfRange(at, skeleton.size)
                 basePtr += flen
             }
-            htmlParts += String(skeleton, charset)
+            htmlParts += fixImages(String(skeleton, charset))
+            ranges += start until basePtr
         }
         if (htmlParts.isEmpty()) { buildClassic(text); return }
-        addMerged(htmlParts)
+        for ((i, html) in htmlParts.withIndex()) {
+            val hasImage = Regex("(?i)<img\\b").containsMatchIn(html)
+            if (plain(html).isEmpty() && !hasImage) continue
+            parts += html
+            val label = ncx.firstOrNull { it.first in ranges[i] }?.second
+            partTitles += label ?: fallbackTitle(html, parts.size)
+        }
+        if (parts.isEmpty()) addMerged(htmlParts)
     }
 
     /** Read a MOBI INDX index starting at record [start]; returns entries with their tag values. */
-    private fun readIndex(start: Int): List<IndexEntry> {
+    private fun readIndex(start: Int): Pair<List<IndexEntry>, Map<Int, String>> {
+        val none = emptyList<IndexEntry>() to emptyMap<Int, String>()
         val h = rec(start)
-        if (h.size < 184 || String(h, 0, 4, Charsets.ISO_8859_1) != "INDX") return emptyList()
+        if (h.size < 184 || String(h, 0, 4, Charsets.ISO_8859_1) != "INDX") return none
         val recordCount = u32(h, 24)
         val tagxOff = u32(h, 180)
-        if (tagxOff <= 0 || tagxOff + 12 > h.size || String(h, tagxOff, 4, Charsets.ISO_8859_1) != "TAGX") return emptyList()
+        if (tagxOff <= 0 || tagxOff + 12 > h.size || String(h, tagxOff, 4, Charsets.ISO_8859_1) != "TAGX") return none
         val firstEntry = u32(h, tagxOff + 4)
         val controlBytes = u32(h, tagxOff + 8)
         class TagDef(val tag: Int, val values: Int, val mask: Int, val endOfGroup: Boolean)
@@ -284,7 +317,38 @@ class MobiBook(file: File) : Book {
                 result += IndexEntry(key, tags)
             }
         }
-        return result
+        // CNCX string pool(s) follow the index records: length-prefixed (variable-width) strings.
+        val cncx = HashMap<Int, String>()
+        var base = 0
+        for (c in 0 until u32(h, 52).coerceIn(0, 64)) {
+            val d = rec(start + recordCount + 1 + c)
+            var q = 0
+            while (q < d.size) {
+                var len = 0
+                var consumed = 0
+                while (q + consumed < d.size) {
+                    val b = d[q + consumed].toInt() and 0xFF
+                    len = (len shl 7) or (b and 0x7F)
+                    consumed++
+                    if ((b and 0x80) != 0) break
+                }
+                if (len > 0 && q + consumed + len <= d.size) cncx[base + q] = String(d, q + consumed, len, Charsets.UTF_8)
+                q += consumed + len
+            }
+            base += 0x10000
+        }
+        return result to cncx
+    }
+
+    private fun readNcx(idx: Int): List<Pair<Int, String>> = try {
+        val (entries, cncx) = readIndex(idx)
+        entries.mapNotNull { e ->
+            val pos = e.tags[1]?.firstOrNull() ?: return@mapNotNull null
+            val label = e.tags[3]?.firstOrNull()?.let { cncx[it] }?.trim()
+            if (label.isNullOrEmpty()) null else pos to label
+        }.sortedBy { it.first }
+    } catch (_: Throwable) {
+        emptyList()
     }
 
     // --- chapter assembly ------------------------------------------------------------------
@@ -303,8 +367,18 @@ class MobiBook(file: File) : Book {
         return out
     }
 
-    private fun plain(html: String) = html.replace(Regex("(?is)<head\\b.*?</head>|<style\\b.*?</style>|<[^>]*>"), "")
-        .replace("&nbsp;", " ").trim()
+    private fun plain(html: String) = html.replace(Regex("(?is)<head\\b.*?</head>|<style\\b.*?</style>"), "")
+        .replace(Regex("<[^>]*>"), " ").replace("&nbsp;", " ").replace(Regex("\\s+"), " ").trim()
+
+    private fun fallbackTitle(html: String, n: Int): String {
+        val heading = Regex("(?is)<h[1-6][^>]*>(.*?)</h[1-6]>").find(html)?.groupValues?.get(1)?.let { plain(it) }
+        if (!heading.isNullOrBlank()) return heading.take(60)
+        if (!Regex("(?i)<img\\b").containsMatchIn(html.take(400))) {
+            val t = plain(html)
+            if (t.isNotEmpty()) return t.take(50)
+        }
+        return "Section $n"
+    }
 
     /** Drop empty pieces, fold tiny pieces (title pages) into the next one, and derive chapter titles. */
     private fun addMerged(pieces: List<String>) {
@@ -319,15 +393,9 @@ class MobiBook(file: File) : Book {
             carry = ""
         }
         if (carry.isNotBlank() && plain(carry).isNotEmpty()) merged += carry
-        for ((i, html) in merged.withIndex()) {
+        for (html in merged) {
             parts += html
-            val heading = Regex("(?is)<h[1-6][^>]*>(.*?)</h[1-6]>").find(html)?.groupValues?.get(1)?.let { plain(it) }
-            val first = plain(html).lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
-            partTitles += when {
-                !heading.isNullOrBlank() -> heading.replace(Regex("\\s+"), " ").take(60)
-                !first.isNullOrBlank() && !Regex("(?i)<img\\b").containsMatchIn(html.take(400)) -> first.replace(Regex("\\s+"), " ").take(50)
-                else -> "Section ${i + 1}"
-            }
+            partTitles += fallbackTitle(html, parts.size)
         }
     }
 

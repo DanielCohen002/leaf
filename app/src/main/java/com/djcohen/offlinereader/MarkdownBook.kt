@@ -15,8 +15,8 @@ class MarkdownBook(file: File) : Book {
         val lines = text.split('\n')
         // Chapters begin at "# " headings, or at "## " if there are no level-1 headings.
         var level = 1
-        var marks = lines.indices.filter { isHeading(lines, it, 1) }
-        if (marks.size < 2) { level = 2; marks = lines.indices.filter { isHeading(lines, it, 2) } }
+        var marks = headingMarks(lines, 1)
+        if (marks.size < 2) { level = 2; marks = headingMarks(lines, 2) }
         val firstHeading = Regex("^#{1,6}\\s+(.*?)\\s*#*\\s*$").find(lines.firstOrNull { it.startsWith("#") } ?: "")?.groupValues?.get(1)
         title = firstHeading?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension.replace('_', ' ').trim()
 
@@ -36,15 +36,16 @@ class MarkdownBook(file: File) : Book {
         if (parts.isEmpty()) { parts += ""; partTitles += title }
     }
 
-    private fun isHeading(lines: List<String>, i: Int, level: Int): Boolean {
-        if (insideFence(lines, i)) return false
-        return lines[i].startsWith("#".repeat(level) + " ")
-    }
-
-    private fun insideFence(lines: List<String>, upTo: Int): Boolean {
-        var open = false
-        for (k in 0 until upTo) if (lines[k].trimStart().startsWith("```")) open = !open
-        return open
+    /** Line indexes of "# " (level 1) or "## " (level 2) headings, ignoring anything inside code fences. */
+    private fun headingMarks(lines: List<String>, level: Int): List<Int> {
+        val prefix = "#".repeat(level) + " "
+        val out = ArrayList<Int>()
+        var fence = false
+        for ((i, line) in lines.withIndex()) {
+            if (line.trimStart().startsWith("```")) fence = !fence
+            else if (!fence && line.startsWith(prefix)) out += i
+        }
+        return out
     }
 
     // --- block level -----------------------------------------------------------------------
