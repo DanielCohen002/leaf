@@ -86,9 +86,17 @@ class Fb2Book(file: File) : Book {
             }
         }
         for ((i, s) in sections.withIndex()) {
-            parts += toHtml(s, 2)
-            partTitles += titleOf(s) ?: fallbackTitle?.let { "$it ${i + 1}" } ?: "Section ${i + 1}"
+            val html = toHtml(s, 2)
+            parts += html
+            partTitles += titleOf(s) ?: fallbackTitle?.let { "$it ${i + 1}" } ?: openingWords(html) ?: "Section ${i + 1}"
         }
+    }
+
+    /** Untitled section: use its first few words so the chapter list is still navigable. */
+    private fun openingWords(html: String): String? {
+        val text = html.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+        if (text.length < 3) return null
+        return if (text.length <= 48) text else text.take(48).substringBeforeLast(' ') + "…"
     }
 
     private fun toHtml(e: Element, headingLevel: Int): String = StringBuilder().also { convert(e, it, headingLevel) }.toString()
@@ -105,7 +113,7 @@ class Fb2Book(file: File) : Book {
             "subtitle" -> wrap("h4")
             "p", "v" -> wrap("p")
             "text-author" -> { sb.append("<p><i>"); kids(n, sb, h); sb.append("</i></p>") }
-            "empty-line" -> sb.append("<br/>")
+            "empty-line" -> if (!sb.endsWith("<br/><br/>")) sb.append("<br/>")   // collapse long runs of blank lines
             "emphasis" -> wrap("i")
             "strong" -> wrap("b")
             "strikethrough" -> wrap("s")
