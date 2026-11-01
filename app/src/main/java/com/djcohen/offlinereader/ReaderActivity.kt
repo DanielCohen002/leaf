@@ -36,7 +36,7 @@ class ReaderActivity : Activity() {
     private lateinit var entry: Entry
     private var book: Book? = null
     private lateinit var page: PageView
-    private lateinit var topBar: TextView
+    private lateinit var topBar: TopBar
     private lateinit var bottomBar: LinearLayout
     private lateinit var selBar: LinearLayout
     private var selText: String? = null
@@ -75,11 +75,7 @@ class ReaderActivity : Activity() {
         }
         root.addView(page, FrameLayout.LayoutParams(-1, -1))
 
-        topBar = TextView(this).apply {
-            setTextColor(Color.WHITE); setBackgroundColor(0xE6202020.toInt()); textSize = 16f
-            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-            setPadding(dp(16), dp(12), dp(16), dp(12)); visibility = View.GONE
-        }
+        topBar = TopBar(this) { finish() }.apply { visibility = View.GONE }
         root.addView(topBar, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
         bottomBar = LinearLayout(this).apply {
@@ -91,10 +87,11 @@ class ReaderActivity : Activity() {
             text = label; isAllCaps = false; setOnClickListener { action() }
             bottomBar.addView(this, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        barButton("‹ Chapter") { skipChapter(-1) }
+        barButton("‹") { skipChapter(-1) }
         barButton("Chapters") { showChapters() }
+        barButton("Search") { showSearch() }
         barButton("Aa") { showSettings() }
-        barButton("Chapter ›") { skipChapter(1) }
+        barButton("›") { skipChapter(1) }
         root.addView(bottomBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         backChip = TextView(this).apply {
             text = "\u21A9  Back to where you were"
@@ -139,7 +136,7 @@ class ReaderActivity : Activity() {
             page.setInsets(b.left, b.top, b.right, b.bottom)
             barTop = b.top; barBottom = b.bottom
             selBar.setPadding(dp(8) + b.left, dp(8) + b.top, dp(8) + b.right, dp(8) + b.bottom)
-            topBar.setPadding(dp(16) + b.left, dp(12) + b.top, dp(16) + b.right, dp(12))
+            topBar.setPadding(dp(8) + b.left, dp(4) + b.top, dp(16) + b.right, dp(4))
             bottomBar.setPadding(dp(8) + b.left, dp(8), dp(8) + b.right, dp(8) + b.bottom)
             insets
         }
@@ -167,7 +164,7 @@ class ReaderActivity : Activity() {
 
     private fun applyStyle() {
         val t = Themes.all[prefs.theme.coerceIn(Themes.all.indices)]
-        page.setStyle(Fonts.typeface(prefs.font), prefs.textSizeSp, prefs.spacing / 100f, t.fg, t.bg, prefs.indent / 10f)
+        page.setStyle(Fonts.typeface(prefs.font), prefs.textSizeSp, prefs.spacing / 100f, t.fg, t.bg, prefs.indent / 10f, prefs.justify)
         page.setScrollMode(prefs.textScroll)
         window.decorView.setBackgroundColor(t.bg)
         if (prefs.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -225,7 +222,7 @@ class ReaderActivity : Activity() {
         val target = b.resolveLink(chapter, href)
         when {
             target == null -> Toast.makeText(this, "Couldn't find where that link goes", Toast.LENGTH_SHORT).show()
-            target.external -> Toast.makeText(this, "That link goes to a web page. Leaf stays offline.", Toast.LENGTH_SHORT).show()
+            target.external -> Toast.makeText(this, "That link goes to a web page. Leaflet stays offline.", Toast.LENGTH_SHORT).show()
             else -> {
                 val from = chapter to page.currentOffset
                 if (target.chapter == chapter) {
@@ -289,6 +286,86 @@ class ReaderActivity : Activity() {
             }
             .setNegativeButton("Close", null)
             .showLeaf()
+    }
+
+    // --- search ----------------------------------------------------------------------------
+
+    private class Hit(val chapter: Int, val offset: Int, val snippet: String)
+
+    /** Plain text of each chapter, filled in as searches need it (offsets match the pages: pictures are one character). */
+    private val plainText = HashMap<Int, String>()
+    private var searching = 0
+
+    private fun showSearch() {
+        val b = book ?: return
+        val input = android.widget.EditText(this).apply {
+            hint = "Word or phrase"; setSingleLine(); setTextColor(0xFFFFF8E7.toInt()); setHintTextColor(0xFFB9D1BF.toInt())
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        }
+        val box = LinearLayout(this).apply { setPadding(dp(20), dp(8), dp(20), 0); addView(input, -1, -2) }
+        val dialog = AlertDialog.Builder(this).setTitle("Search this book").setView(box)
+            .setPositiveButton("Search", null).setNegativeButton("Cancel", null).showLeaf()
+        fun go() {
+            val q = input.text.toString().trim()
+            if (q.isEmpty()) return
+            dialog.dismiss()
+            runSearch(b, q)
+        }
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { go() }
+        input.setOnEditorActionListener { _, _, _ -> go(); true }
+        input.requestFocus()
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+    }
+
+    private fun runSearch(b: Book, query: String) {
+        val token = ++searching
+        val progress = AlertDialog.Builder(this).setMessage("Searching…").setNegativeButton("Cancel") { _, _ -> searching++ }.showLeaf()
+        progress.setCanceledOnTouchOutside(false)
+        val w = page.contentWidth
+        io.execute {
+            val hits = ArrayList<Hit>()
+            val max = 300
+            for (c in b.chapterTitles.indices) {
+                if (token != searching) return@execute
+                val text = plainText.getOrPut(c) {
+                    try { b.load(c, 8, 8).toString() } catch (t: Throwable) { "" }
+                }
+                var from = 0
+                while (hits.size < max) {
+                    val i = text.indexOf(query, from, ignoreCase = true)
+                    if (i < 0) break
+                    val a = (i - 35).coerceAtLeast(0)
+                    val e = (i + query.length + 55).coerceAtMost(text.length)
+                    val snip = text.substring(a, e).replace(Regex("\\s+"), " ").trim()
+                    hits += Hit(c, i, (if (a > 0) "… " else "") + snip + (if (e < text.length) " …" else ""))
+                    from = i + query.length
+                }
+                if (hits.size >= max) break
+            }
+            ui.post {
+                if (token != searching || isFinishing) return@post
+                progress.dismiss()
+                showHits(b, query, hits)
+            }
+        }
+    }
+
+    private fun showHits(b: Book, query: String, hits: List<Hit>) {
+        if (hits.isEmpty()) {
+            Toast.makeText(this, "No matches for “$query”", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val lines = hits.map { h -> "${b.chapterTitles[h.chapter]}\n${h.snippet}" }.toTypedArray()
+        val title = if (hits.size >= 300) "300+ matches" else "${hits.size} match" + if (hits.size == 1) "" else "es"
+        AlertDialog.Builder(this).setTitle(title)
+            .setItems(lines) { _, which ->
+                val h = hits[which]
+                setOverlay(false)
+                val from = chapter to page.currentOffset
+                if (h.chapter == chapter) page.jumpToOffset(h.offset) else loadChapter(h.chapter, h.offset)
+                showBack(from)
+            }
+            .setNegativeButton("Close", null).showLeaf()
     }
 
     // --- selection actions -----------------------------------------------------------------
@@ -417,6 +494,7 @@ class ReaderActivity : Activity() {
         fun check(text: String, value: Boolean, set: (Boolean) -> Unit) = CheckBox(this).apply {
             this.text = text; isChecked = value; setOnCheckedChangeListener { _, c -> set(c) }
         }.also { box.addView(it) }
+        check("Justify text (straight edges)", prefs.justify) { prefs.justify = it; applyStyle() }
         check("Scroll instead of turning pages", prefs.textScroll) { prefs.textScroll = it; applyStyle() }
         check("Volume keys turn pages", prefs.volumeKeys) { prefs.volumeKeys = it }
         check("Swap volume keys (volume up = next)", prefs.swapVolume) { prefs.swapVolume = it }

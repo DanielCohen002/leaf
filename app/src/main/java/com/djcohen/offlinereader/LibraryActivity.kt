@@ -170,7 +170,7 @@ class LibraryActivity : Activity() {
         }
         header.addView(logo(), LinearLayout.LayoutParams(dp(64), dp(64)))
         header.addView(TextView(this).apply {
-            text = "Leaf"; textSize = 30f; setTextColor(PAGE)
+            text = "Leaflet"; textSize = 30f; setTextColor(PAGE)
             typeface = Typeface.create("serif", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         toggle = ImageView(this).apply {
@@ -211,7 +211,7 @@ class LibraryActivity : Activity() {
             setPadding(dp(32), dp(32), dp(32), dp(64))
             addView(logo(), LinearLayout.LayoutParams(dp(150), dp(150)))
             addView(TextView(context).apply {
-                text = "No books yet.\nTap “Add books” and choose EPUB, MOBI, FB2, PDF, CBZ comics, TXT, HTML or Markdown files from your phone.\n\nLeaf has no internet access at all."
+                text = "No books yet.\nTap “Add books” and choose EPUB, MOBI, FB2, PDF, CBZ comics, TXT, HTML or Markdown files from your phone.\n\nLeaflet has no internet access at all."
                 textSize = 15f; gravity = Gravity.CENTER; setTextColor(PAGE); alpha = 0.8f
             })
         }
@@ -249,6 +249,12 @@ class LibraryActivity : Activity() {
         }
 
         intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data?.let { importUris(listOf(it), openFirst = true) }
+
+        // Opening the app (not coming back to it) goes straight to the book you were reading.
+        if (savedInstanceState == null && !autoOpenDone && intent?.action != Intent.ACTION_VIEW) {
+            autoOpenDone = true
+            library.lastOpened()?.let { openBook(it) }
+        }
     }
 
     override fun onResume() {
@@ -306,7 +312,7 @@ class LibraryActivity : Activity() {
             items += "Choose a different folder…"; actions += { pickFolder() }
             items += "Stop syncing “$name”"; actions += {
                 library.syncFolder = null
-                toast("Stopped syncing. Books already added stay in Leaf.")
+                toast("Stopped syncing. Books already added stay in Leaflet.")
             }
         }
         AlertDialog.Builder(this).setTitle("Add books")
@@ -398,7 +404,7 @@ class LibraryActivity : Activity() {
                 syncing = false
                 if (lostAccess) {
                     library.syncFolder = null
-                    toast("Leaf can no longer read that folder. Choose it again from Add books.")
+                    toast("Leaflet can no longer read that folder. Choose it again from Add books.")
                 }
                 var removed = 0
                 if (gone.isNotEmpty()) {
@@ -411,7 +417,7 @@ class LibraryActivity : Activity() {
                 if (removed > 0) parts += "removed $removed that left the folder"
                 if (failed.isNotEmpty()) parts += "${failed.size} could not be read"
                 if (parts.isNotEmpty()) toast(parts.joinToString(", ").replaceFirstChar { it.uppercase() })
-                else if (!quiet && !lostAccess && gone.isEmpty()) toast("Leaf already matches the folder")
+                else if (!quiet && !lostAccess && gone.isEmpty()) toast("Leaflet already matches the folder")
             }
         }
     }
@@ -429,7 +435,7 @@ class LibraryActivity : Activity() {
             .setNegativeButton("Keep them") { _, _ ->
                 // They become ordinary books added by hand, so the sync stops asking about them.
                 gone.forEach { library.setSource(it, "") }
-                toast("They stay in Leaf")
+                toast("They stay in Leaflet")
             }
             .showLeaf()
     }
@@ -522,6 +528,7 @@ class LibraryActivity : Activity() {
     }
 
     companion object {
+        private var autoOpenDone = false
         private const val REQ_PICK = 1
         private const val REQ_FOLDER = 2
         // Leaf palette (matches the icon).

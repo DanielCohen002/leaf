@@ -8,6 +8,7 @@ class MarkdownBook(file: File) : Book {
     override val title: String
     private val parts = ArrayList<String>()
     private val partTitles = ArrayList<String>()
+    private val links = LinkIndex()
     override val chapterTitles: List<String> get() = partTitles
 
     init {
@@ -34,7 +35,12 @@ class MarkdownBook(file: File) : Book {
             }
         }
         if (parts.isEmpty()) { parts += ""; partTitles += title }
+        parts.forEachIndexed { i, html -> links.scan(i, html) }
     }
+
+    /** GitHub-style anchor for a heading: lower case, punctuation dropped, spaces become hyphens. */
+    private fun slug(heading: String): String =
+        heading.lowercase().filter { it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_' }.trim().replace(' ', '-')
 
     /** Line indexes of "# " (level 1) or "## " (level 2) headings, ignoring anything inside code fences. */
     private fun headingMarks(lines: List<String>, level: Int): List<Int> {
@@ -80,7 +86,7 @@ class MarkdownBook(file: File) : Book {
                 heading != null -> {
                     flushPara(); closeList()
                     val n = heading.groupValues[1].length
-                    out.append("<h$n>").append(inline(heading.groupValues[2])).append("</h$n>")
+                    out.append("<h$n id=\"").append(slug(heading.groupValues[2])).append("\">").append(inline(heading.groupValues[2])).append("</h$n>")
                 }
                 Regex("^\\s*([-*_])(\\s*\\1){2,}\\s*$").matches(line) -> { flushPara(); closeList(); out.append("<p>* * *</p>") }
                 line.startsWith(">") -> {
@@ -108,17 +114,27 @@ class MarkdownBook(file: File) : Book {
     private fun inline(text: String): String {
         var s = esc(text)
         s = s.replace(Regex("!\\[([^\\]]*)]\\([^)]*\\)"), "$1")                   // images -> alt text
-        s = s.replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1")                    // links -> label
+        // Links become <a href>; the address is parked in a placeholder so the emphasis rules below can't touch it.
+        val urls = ArrayList<String>()
+        s = s.replace(Regex("\\[([^\\]]+)]\\(([^)]*)\\)")) { m ->
+            urls += m.groupValues[2].trim().substringBefore(' ').replace("\"", "%22")
+            "<a href=\"LFURL${urls.size - 1}LF\">${m.groupValues[1]}</a>"
+        }
         s = s.replace(Regex("`([^`]+)`"), "<tt>$1</tt>")
         s = s.replace(Regex("\\*\\*(.+?)\\*\\*"), "<b>$1</b>")
         s = s.replace(Regex("(?<![\\w])__(.+?)__(?![\\w])"), "<b>$1</b>")
         s = s.replace(Regex("(?<![\\w*])\\*(?!\\s)(.+?)(?<!\\s)\\*(?![\\w*])"), "<i>$1</i>")
         s = s.replace(Regex("(?<![\\w])_(?!\\s)(.+?)(?<!\\s)_(?![\\w])"), "<i>$1</i>")
         s = s.replace(Regex("~~(.+?)~~"), "<s>$1</s>")
+        for ((i, u) in urls.withIndex()) s = s.replace("LFURL${i}LF", u)
         return s
     }
 
-    override fun load(index: Int, maxW: Int, maxH: Int): Spanned = HtmlText.page(parts[index], maxW, maxH) { _, _, _, _ -> null }
+    override fun load(index: Int, maxW: Int, maxH: Int): Spanned =
+        HtmlText.page(parts[index], maxW, maxH, links.collector(index)) { _, _, _, _ -> null }
+
+    override fun resolveLink(chapter: Int, href: String) = links.resolve(chapter, href)
+    override fun anchorOffset(chapter: Int, id: String) = links.offset(chapter, id)
 
     override fun close() {}
 }

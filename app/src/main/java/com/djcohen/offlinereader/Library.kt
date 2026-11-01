@@ -84,6 +84,9 @@ class Library(private val context: Context) {
         }
     }
 
+    /** The book read most recently, or null if nothing has been read yet. */
+    fun lastOpened(): Entry? = entries().firstOrNull()?.takeIf { lastRead(it.id) > 0 && file(it).exists() }
+
     /** When the book was last read (0 = never). Books read before timestamps existed count as read, long ago. */
     private fun lastRead(id: String): Long {
         val t = sp.getLong("read_$id", 0L)

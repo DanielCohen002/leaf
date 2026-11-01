@@ -40,6 +40,37 @@ interface Book {
 /** The destination of a link: a chapter plus (optionally) a named spot in it. [external] links go to the web. */
 class LinkTarget(val chapter: Int, val anchor: String?, val external: Boolean = false)
 
+/**
+ * Link bookkeeping for books whose chapters are HTML strings held in memory (FB2, Markdown, MOBI): which chapter holds each
+ * id, and (once a chapter has been loaded) at which character offset. href values are "#id" after the book has rewritten them.
+ */
+internal class LinkIndex {
+    private val chapterOfId = HashMap<String, Int>()
+    private val offsets = java.util.concurrent.ConcurrentHashMap<Int, Map<String, Int>>()
+    private val idRegex = Regex("(?i)\\s(?:id|name)\\s*=\\s*[\"']([^\"']+)[\"']")
+
+    /** Remember every id found in the HTML of [chapter]. */
+    fun scan(chapter: Int, html: String) {
+        for (m in idRegex.findAll(html)) chapterOfId.putIfAbsent(m.groupValues[1], chapter)
+    }
+
+    /** Pass to [HtmlText.page] when loading [chapter]; the offsets land here. */
+    fun collector(chapter: Int): MutableMap<String, Int> = HashMap<String, Int>().also { offsets[chapter] = it }
+
+    fun offset(chapter: Int, id: String): Int? = offsets[chapter]?.get(id)
+
+    fun resolve(chapter: Int, href: String): LinkTarget? {
+        val h = href.trim()
+        if (h.isEmpty()) return null
+        if (!h.startsWith("#")) {
+            return if (Regex("^[A-Za-z][A-Za-z0-9+.-]*:").containsMatchIn(h) && !h.startsWith("kindle:")) LinkTarget(-1, null, external = true) else null
+        }
+        val id = Uri.decode(h.substring(1))
+        val at = chapterOfId[id] ?: chapterOfId[h.substring(1)] ?: return null
+        return LinkTarget(at, id)
+    }
+}
+
 object BookLoader {
     val textExtensions = setOf("epub", "txt", "text", "html", "htm", "xhtml", "md", "markdown", "fb2", "mobi", "azw", "azw3", "prc")
     val supportedExtensions: Set<String> get() = textExtensions + ImageBooks.extensions
@@ -141,8 +172,12 @@ internal object HtmlText {
 
     /** Strip publisher colors/sizes (they break dark mode and font choice), trim, indent paragraphs. */
     fun tidy(sb: SpannableStringBuilder): Spanned {
-        for (cls in arrayOf(ForegroundColorSpan::class.java, BackgroundColorSpan::class.java, AbsoluteSizeSpan::class.java)) {
-            for (s in sb.getSpans(0, sb.length, cls)) sb.removeSpan(s)
+        for (cls in arrayOf(ForegroundColorSpan::class.java, BackgroundColorSpan::class.java, AbsoluteSizeSpan::class.java, android.text.style.TypefaceSpan::class.java)) {
+            for (s in sb.getSpans(0, sb.length, cls)) {
+                // Publisher fonts override the reader's font choice; only code (monospace) keeps its look.
+                if (s is android.text.style.TypefaceSpan && s.family == "monospace") continue
+                sb.removeSpan(s)
+            }
         }
         // Normalise object-replacement / nbsp noise and trim.
         var end = sb.length

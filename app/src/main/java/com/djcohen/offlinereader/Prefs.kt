@@ -86,6 +86,10 @@ class Prefs(context: Context, ext: String = "") {
     var textScroll: Boolean
         get() = bool("textscroll", false)
         set(v) = putBool("textscroll", v)
+    /** Text books: line up both edges of the text. */
+    var justify: Boolean
+        get() = bool("justify", false)
+        set(v) = putBool("justify", v)
     var keepScreenOn: Boolean
         get() = bool("keepon", true)
         set(v) = putBool("keepon", v)

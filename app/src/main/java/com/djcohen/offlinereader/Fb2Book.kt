@@ -16,6 +16,7 @@ class Fb2Book(file: File) : Book {
     private var coverBinaryId: String? = null
     private val parts = ArrayList<String>()
     private val partTitles = ArrayList<String>()
+    private val links = LinkIndex()
     override val chapterTitles: List<String> get() = partTitles
 
     init {
@@ -43,6 +44,7 @@ class Fb2Book(file: File) : Book {
         addBody(main)
         for (b in bodies) if (b !== main) addBody(b, fallbackTitle = b.getAttribute("name").ifEmpty { "Notes" }.replaceFirstChar { it.uppercase() })
         if (parts.isEmpty()) throw IllegalArgumentException("This FB2 file has no text.")
+        parts.forEachIndexed { i, html -> links.scan(i, html) }
     }
 
     private fun Element.children(name: String): List<Element> {
@@ -109,6 +111,8 @@ class Fb2Book(file: File) : Book {
     private fun convert(n: Node, sb: StringBuilder, h: Int) {
         if (n.nodeType == Node.TEXT_NODE) { sb.append(esc(n.nodeValue)); return }
         if (n !is Element) return
+        // Targets of links (notes, contents entries): an empty named anchor in front of the element.
+        n.getAttribute("id").takeIf { it.isNotEmpty() && n.tagName != "binary" }?.let { sb.append("<a id=\"").append(it.replace("\"", "")).append("\"></a>") }
         fun wrap(tag: String, level: Int = h) { sb.append('<').append(tag).append('>'); kids(n, sb, level); sb.append("</").append(tag).append('>') }
         when (n.tagName) {
             "section" -> kids(n, sb, minOf(h + 1, 4))
@@ -125,6 +129,11 @@ class Fb2Book(file: File) : Book {
             "code" -> wrap("tt")
             "poem", "stanza", "cite", "epigraph" -> wrap("blockquote")
             "image" -> href(n)?.let { sb.append("<img src=\"").append(it).append("\"/>") }
+            "a" -> {
+                val target = href(n)
+                if (target == null) kids(n, sb, h)
+                else { sb.append("<a href=\"").append(target.replace("\"", "%22")).append("\">"); kids(n, sb, h); sb.append("</a>") }
+            }
             "binary" -> {}
             else -> kids(n, sb, h)
         }
@@ -142,11 +151,14 @@ class Fb2Book(file: File) : Book {
     }
 
     override fun load(index: Int, maxW: Int, maxH: Int): Spanned =
-        HtmlText.page(parts[index], maxW, maxH) { src, w, hh, up ->
+        HtmlText.page(parts[index], maxW, maxH, links.collector(index)) { src, w, hh, up ->
             binaries[src.removePrefix("#")]?.let { b64 ->
                 try { ImageUtil.decode(Base64.decode(b64, Base64.DEFAULT), w, hh, up) } catch (_: Throwable) { null }
             }
         }
+
+    override fun resolveLink(chapter: Int, href: String) = links.resolve(chapter, href)
+    override fun anchorOffset(chapter: Int, id: String) = links.offset(chapter, id)
 
     override fun cover(maxW: Int, maxH: Int): Bitmap? {
         val b64 = coverBinaryId?.let { binaries[it] } ?: return null

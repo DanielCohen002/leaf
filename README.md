@@ -1,9 +1,9 @@
-<p align="center"><img src="docs/leaf-icon.png" alt="Leaf icon" width="160"></p>
+<p align="center"><img src="docs/leaf-icon.png" alt="Leaflet icon" width="160"></p>
 
-# Leaf
+# Leaflet
 
-A personal e-reader for Android that never touches the internet. The name is a double meaning: a leaf of a plant,
-and a leaf of paper.
+A personal e-reader for Android that never touches the internet. The name is a double meaning: a leaflet is a small leaf of a plant,
+and a printed leaflet.
 
 **No network access.** The app declares no permissions at all (not even `INTERNET`), so Android itself blocks any
 connection. There is no cloud sync, no analytics, and no web dictionary: lookups use a bundled offline dictionary.
@@ -23,11 +23,11 @@ connection. There is no cloud sync, no analytics, and no web dictionary: lookups
 - Long-press a word to select it, copy it, or look it up in the offline dictionary (WordNet 3.0)
 - Reading position is remembered per book; reading settings are remembered per file format
 - Library as a list or a grid of covers; books you have read come first (most recent on top), then the rest A to Z
-- Optionally keep a folder (such as `Books`) in sync: chosen once with the system folder picker, so Leaf still needs no storage permission
+- Optionally keep a folder (such as `Books`) in sync: chosen once with the system folder picker, so Leaflet still needs no storage permission
 
 ## Download
 
-Get the latest `Leaf-<version>.apk` from the
+Get the latest `Leaflet-<version>.apk` from the
 [Releases page](https://github.com/DanielCohen002/leaf/releases) and open it on your phone (64-bit ARM,
 Android 11 or newer). You may need to allow installs from your browser or file manager. Google Play Protect can
 show an "App scan recommended" prompt because the app isn't from the Play Store: choose **Install without
@@ -66,4 +66,4 @@ Then `./gradlew assembleRelease` produces `app/build/outputs/apk/release/app-rel
 - Targets 64-bit ARM phones (`arm64-v8a`) and Android 11+ (`minSdk 30`).
 - The only dependency is [libarchive-android](https://github.com/zhanghai/libarchive-android) (for RAR/7z/tar comics).
   Third-party licenses are in `app/src/main/assets/THIRD-PARTY.txt` and `WORDNET-LICENSE.txt`.
-- No license has been chosen for Leaf's own code yet.
+- No license has been chosen for Leaflet's own code yet.

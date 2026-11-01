@@ -41,7 +41,7 @@ class ImageReaderActivity : Activity() {
     private var book: ImageBook? = null
     private lateinit var view: ImagePageView
     private lateinit var scrollView: ScrollImageView
-    private lateinit var topBar: TextView
+    private lateinit var topBar: TopBar
     private lateinit var bottomBar: LinearLayout
     private lateinit var seek: SeekBar
     private lateinit var pageLabel: TextView
@@ -117,11 +117,7 @@ class ImageReaderActivity : Activity() {
         }
         root.addView(scrollView, FrameLayout.LayoutParams(-1, -1))
 
-        topBar = TextView(this).apply {
-            setTextColor(Color.WHITE); setBackgroundColor(0xE6202020.toInt()); textSize = 16f
-            maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-            setPadding(dp(16), dp(12), dp(16), dp(12)); visibility = View.GONE
-        }
+        topBar = TopBar(this) { finish() }.apply { visibility = View.GONE }
         root.addView(topBar, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
         bottomBar = LinearLayout(this).apply {
@@ -151,7 +147,7 @@ class ImageReaderActivity : Activity() {
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val b = insets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            topBar.setPadding(dp(16) + b.left, dp(12) + b.top, dp(16) + b.right, dp(12))
+            topBar.setPadding(dp(8) + b.left, dp(4) + b.top, dp(16) + b.right, dp(4))
             bottomBar.setPadding(dp(16) + b.left, dp(8), dp(16) + b.right, dp(8) + b.bottom)
             view.setBottomInset(b.bottom)
             insets

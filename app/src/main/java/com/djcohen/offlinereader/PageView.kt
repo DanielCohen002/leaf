@@ -42,6 +42,7 @@ class PageView(context: Context) : View(context) {
     private var pendingOffset = 0
     private var raw: CharSequence = ""     // the chapter as loaded; [text] is this plus paragraph indents
     private var indentPx = 0
+    private var justify = false
 
     // --- continuous scroll mode (instead of turning pages) -------------------------------------
     private var scrollMode = false
@@ -91,10 +92,10 @@ class PageView(context: Context) : View(context) {
     val pageCount get() = pageStartLines.size
     val pageIndex get() = page
     val contentWidth get() = (width - insetL - insetR - 2 * margin).coerceAtLeast(100)
-    val contentHeight get() = (height - insetT - insetB - 2 * vMargin - footerHeight).coerceAtLeast(100)
+    val contentHeight get() = (height - insetT - insetB - vMargin - footerHeight).coerceAtLeast(100)
     private val margin get() = (22 * density).toInt()
     private val vMargin get() = (14 * density).toInt()
-    private val footerHeight get() = (footerPaint.textSize + 16 * density).toInt()
+    private val footerHeight get() = (footerPaint.textSize + 14 * density).toInt()
 
     /** Character offset at the top of the current page, used to save and restore the reading position. */
     val currentOffset: Int
@@ -205,7 +206,8 @@ class PageView(context: Context) : View(context) {
         relayout(currentOffset)
     }
 
-    fun setStyle(typeface: Typeface, sizeSp: Int, spacing: Float, fgColor: Int, bgColor: Int, indentEm: Float = 1.2f) {
+    fun setStyle(typeface: Typeface, sizeSp: Int, spacing: Float, fgColor: Int, bgColor: Int, indentEm: Float = 1.2f, justified: Boolean = false) {
+        justify = justified
         clearSelection()
         val keep = currentOffset
         paint.typeface = typeface
@@ -236,7 +238,8 @@ class PageView(context: Context) : View(context) {
         text = withIndent(raw)
         val len = text.length
         layout = StaticLayout.Builder.obtain(text, 0, len, paint, contentWidth)
-            .setLineSpacing(0f, spacingMult).setIncludePad(false).build()
+            .setLineSpacing(0f, spacingMult).setIncludePad(false)
+            .setJustificationMode(if (justify) Layout.JUSTIFICATION_MODE_INTER_WORD else Layout.JUSTIFICATION_MODE_NONE).build()
         val l = layout!!
         if (scrollMode) {
             pageStartLines = intArrayOf(0)

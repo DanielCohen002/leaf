@@ -19,6 +19,7 @@ class MobiBook(file: File) : Book {
         private set
     private val parts = ArrayList<String>()
     private val partTitles = ArrayList<String>()
+    private val links = LinkIndex()
     private var firstImage = -1
     private var charset: Charset = Charsets.UTF_8
     private var coverRecord = -1
@@ -33,7 +34,21 @@ class MobiBook(file: File) : Book {
         recOffsets = IntArray(n + 1) { if (it < n) u32(data, 78 + 8 * it) else data.size }
         parse()
         if (parts.isEmpty()) throw IllegalArgumentException("This book has no readable text.")
+        // Links: rewrite the Kindle address forms to plain "#id" links and note which chapter holds each id.
+        for (i in parts.indices) {
+            parts[i] = fixLinks(parts[i])
+            links.scan(i, parts[i])
+        }
     }
+
+    /** Classic MOBI: filepos=N (byte position in the text). KF8: kindle:pos:fid:XXXX:off:YYYY (fragment number, offset). */
+    private fun fixLinks(html: String): String =
+        html.replace(Regex("(?i)filepos\\s*=\\s*[\"']?0*(\\d+)[\"']?"), "href=\"#fp$1\"")
+            .replace(Regex("kindle:pos:fid:([0-9A-Za-z]+):off:([0-9A-Za-z]+)")) { m ->
+                val fid = m.groupValues[1].toIntOrNull(32)
+                val off = m.groupValues[2].toIntOrNull(32)
+                if (fid == null || off == null) m.value else "#kp${fid}_$off"
+            }
 
     // --- byte helpers ----------------------------------------------------------------------
 
@@ -186,7 +201,15 @@ class MobiBook(file: File) : Book {
 
     private fun buildClassic(text: ByteArray) {
         // Work on a 1-char-per-byte view so that table-of-contents byte positions line up with string offsets.
-        val raw = String(text, Charsets.ISO_8859_1)
+        var raw = String(text, Charsets.ISO_8859_1)
+        var ncx = this.ncx
+        try {
+            // Mark every spot a filepos link points at, so the links can find it later; table-of-contents positions shift to match.
+            val marked = markFilepos(raw)
+            raw = marked.first
+            ncx = ncx.map { marked.second(it.first) to it.second }
+        } catch (_: Throwable) {
+        }
         fun decode(a: Int, b: Int) = fixImages(String(raw.substring(a, b).toByteArray(Charsets.ISO_8859_1), charset))
 
         if (ncx.size >= 2) {
@@ -209,6 +232,37 @@ class MobiBook(file: File) : Book {
         addMerged(pieces.map { fixImages(String(it.toByteArray(Charsets.ISO_8859_1), charset)) })
     }
 
+    /** Insert <a id="fpN"></a> at each byte position N that a filepos link targets. Returns the new text and a position shifter. */
+    private fun markFilepos(raw: String): Pair<String, (Int) -> Int> {
+        val wanted = Regex("(?i)filepos\\s*=\\s*[\"']?0*(\\d+)").findAll(raw)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }.filter { it in 0 until raw.length }.toSortedSet()
+        // (where to insert, the link number), moved forward to the next tag start so nothing lands inside a tag
+        val spots = ArrayList<Pair<Int, Int>>()
+        for (n in wanted) {
+            val at = if (raw[n] == '<') n else raw.indexOf('<', n)
+            if (at >= 0) spots += at to n
+        }
+        spots.sortBy { it.first }
+        val sb = StringBuilder(raw.length + spots.size * 20)
+        val starts = IntArray(spots.size)
+        val lens = IntArray(spots.size)
+        var last = 0
+        for ((k, spot) in spots.withIndex()) {
+            sb.append(raw, last, spot.first)
+            last = spot.first
+            val marker = "<a id=\"fp${spot.second}\"></a>"
+            starts[k] = spot.first; lens[k] = marker.length
+            sb.append(marker)
+        }
+        sb.append(raw, last, raw.length)
+        val shift = { p: Int ->
+            var extra = 0
+            for (k in starts.indices) if (starts[k] < p) extra += lens[k] else break
+            p + extra
+        }
+        return sb.toString() to shift
+    }
+
     // --- KF8 / AZW3 ------------------------------------------------------------------------
 
     private class IndexEntry(val key: String, val tags: Map<Int, List<Int>>)
@@ -219,6 +273,16 @@ class MobiBook(file: File) : Book {
         val ranges = ArrayList<IntRange>()
         var fragPtr = 0
         val htmlParts = ArrayList<String>()
+        // Spots inside fragments that kindle:pos links point at: fragment number to byte offsets.
+        val wanted = HashMap<Int, MutableSet<Int>>()
+        try {
+            for (m in Regex("kindle:pos:fid:([0-9A-Za-z]+):off:([0-9A-Za-z]+)").findAll(String(text, Charsets.ISO_8859_1))) {
+                val fid = m.groupValues[1].toIntOrNull(32) ?: continue
+                val off = m.groupValues[2].toIntOrNull(32) ?: continue
+                wanted.getOrPut(fid) { java.util.TreeSet<Int>() } += off
+            }
+        } catch (_: Throwable) {
+        }
         for (sk in skeletons) {
             val count = sk.tags[1]?.firstOrNull() ?: 0
             val pos = sk.tags[6] ?: continue
@@ -229,11 +293,13 @@ class MobiBook(file: File) : Book {
             var skeleton = text.copyOfRange(start, start + length)
             var basePtr = start + length
             for (j in 0 until count) {
+                val fragNo = fragPtr
                 val frag = fragments.getOrNull(fragPtr++) ?: break
                 val insertPos = (frag.key.toIntOrNull() ?: 0) - start
                 val flen = frag.tags[6]?.getOrNull(1) ?: 0
                 if (basePtr + flen > text.size || flen < 0) break
-                val slice = text.copyOfRange(basePtr, basePtr + flen)
+                var slice = text.copyOfRange(basePtr, basePtr + flen)
+                wanted[fragNo]?.let { offs -> slice = markSpots(slice, fragNo, offs) }
                 val at = insertPos.coerceIn(0, skeleton.size)
                 skeleton = skeleton.copyOfRange(0, at) + slice + skeleton.copyOfRange(at, skeleton.size)
                 basePtr += flen
@@ -250,6 +316,28 @@ class MobiBook(file: File) : Book {
             partTitles += label ?: fallbackTitle(html, parts.size)
         }
         if (parts.isEmpty()) addMerged(htmlParts)
+    }
+
+    /** Put an <a id="kpFID_OFF"></a> marker into a fragment at each wanted byte offset (moved on to the next tag start). */
+    private fun markSpots(slice: ByteArray, fid: Int, offsets: Set<Int>): ByteArray {
+        val at = ArrayList<Pair<Int, Int>>()          // (position, offset as named in the link)
+        for (o in offsets) {
+            if (o < 0 || o >= slice.size) continue
+            var p = o
+            while (p < slice.size && slice[p] != '<'.code.toByte()) p++
+            if (p < slice.size) at += p to o
+        }
+        if (at.isEmpty()) return slice
+        at.sortBy { it.first }
+        val out = ByteArrayOutputStream(slice.size + at.size * 24)
+        var last = 0
+        for ((p, o) in at) {
+            out.write(slice, last, p - last)
+            last = p
+            out.write("<a id=\"kp${fid}_$o\"></a>".toByteArray(Charsets.ISO_8859_1))
+        }
+        out.write(slice, last, slice.size - last)
+        return out.toByteArray()
     }
 
     /** Read a MOBI INDX index starting at record [start]; returns entries with their tag values. */
@@ -405,7 +493,7 @@ class MobiBook(file: File) : Book {
     // --- rendering -------------------------------------------------------------------------
 
     override fun load(index: Int, maxW: Int, maxH: Int): Spanned =
-        HtmlText.page(parts[index], maxW, maxH) { src, w, h, up ->
+        HtmlText.page(parts[index], maxW, maxH, links.collector(index)) { src, w, h, up ->
             val record = when {
                 src.startsWith("rec:") -> src.removePrefix("rec:").toIntOrNull()
                 src.startsWith("kindle:embed:") -> {
@@ -416,6 +504,9 @@ class MobiBook(file: File) : Book {
             }
             if (record == null || record < 0) null else ImageUtil.decode(rec(record), w, h, up)
         }
+
+    override fun resolveLink(chapter: Int, href: String) = links.resolve(chapter, href)
+    override fun anchorOffset(chapter: Int, id: String) = links.offset(chapter, id)
 
     override fun cover(maxW: Int, maxH: Int): Bitmap? {
         // The declared cover record, else the first picture in the file (usually the cover).
