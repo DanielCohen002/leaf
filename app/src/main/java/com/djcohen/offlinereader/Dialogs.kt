@@ -16,6 +16,16 @@ private const val FOREST = 0xFF1E3A2A.toInt()
 fun AlertDialog.Builder.showLeaf(): AlertDialog {
     val dialog = create()
     dialog.setOnShowListener {
+        // The system draws the title and list rows in its own dark text colour whatever the theme says.
+        val titleId = dialog.context.resources.getIdentifier("alertTitle", "id", "android")
+        dialog.findViewById<android.widget.TextView>(titleId)?.setTextColor(0xFFFFF8E7.toInt())
+        dialog.listView?.let { lv ->
+            lv.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
+                override fun onChildViewAdded(parent: android.view.View?, child: android.view.View?) { tint(child) }
+                override fun onChildViewRemoved(parent: android.view.View?, child: android.view.View?) {}
+            })
+            for (i in 0 until lv.childCount) tint(lv.getChildAt(i))
+        }
         val density = dialog.context.resources.displayMetrics.density
         fun pill(color: Int) = GradientDrawable().apply { setColor(color); cornerRadius = 24 * density }
         val pressed = intArrayOf(android.R.attr.state_pressed)
@@ -39,4 +49,9 @@ fun AlertDialog.Builder.showLeaf(): AlertDialog {
     }
     dialog.show()
     return dialog
+}
+
+private fun tint(v: android.view.View?) {
+    if (v is android.widget.TextView) v.setTextColor(0xFFFFF8E7.toInt())
+    else if (v is android.view.ViewGroup) for (i in 0 until v.childCount) tint(v.getChildAt(i))
 }

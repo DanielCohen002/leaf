@@ -15,17 +15,53 @@ object Themes {
 }
 
 object Fonts {
-    /** Display name to Android system font family. Bundled fonts can be added later. */
-    val all = listOf(
-        "Serif" to "serif",
-        "Sans" to "sans-serif",
-        "Condensed" to "sans-serif-condensed",
-        "Monospace" to "monospace",
-        "Casual" to "casual",
-        "Slab" to "serif-monospace",
+    /**
+     * Display name, then the font files (regular, bold, italic, bold italic) every Android phone ships in /system/fonts,
+     * then the old family name used if the files aren't there. The files are loaded directly because some phones remap the
+     * family names ("serif", "sans-serif-condensed"...) onto the user's system font, which made every choice look the same.
+     */
+    private class Choice(val name: String, val files: List<String>, val family: String)
+
+    private val choices = listOf(
+        Choice("Serif", listOf("NotoSerif-Regular", "NotoSerif-Bold", "NotoSerif-Italic", "NotoSerif-BoldItalic"), "serif"),
+        Choice("Sans", listOf("Roboto-Regular"), "sans-serif"),
+        Choice("Source Sans", listOf("SourceSansPro-Regular", "SourceSansPro-Bold", "SourceSansPro-Italic", "SourceSansPro-BoldItalic"), "sans-serif-condensed"),
+        Choice("Monospace", listOf("DroidSansMono"), "monospace"),
+        Choice("Typewriter", listOf("CutiveMono"), "serif-monospace"),
+        Choice("Handwriting", listOf("ComingSoon"), "casual"),
+        Choice("Script", listOf("DancingScript-Regular"), "cursive"),
+        Choice("Phone's own font", emptyList(), "sans-serif"),
     )
 
-    fun typeface(index: Int): Typeface = Typeface.create(all[index.coerceIn(all.indices)].second, Typeface.NORMAL)
+    val all: List<Pair<String, String>> = choices.map { it.name to it.family }
+    private val cache = HashMap<Int, Typeface>()
+
+    fun typeface(index: Int): Typeface {
+        val i = index.coerceIn(choices.indices)
+        return cache.getOrPut(i) { build(choices[i]) }
+    }
+
+    private fun build(c: Choice): Typeface {
+        try {
+            if (c.files.isEmpty()) return Typeface.create(c.family, Typeface.NORMAL)
+            val fonts = c.files.mapNotNull { name ->
+                val f = java.io.File("/system/fonts/$name.ttf")
+                if (!f.exists()) return@mapNotNull null
+                val bold = name.contains("Bold")
+                val italic = name.contains("Italic")
+                android.graphics.fonts.Font.Builder(f).setWeight(if (bold) 700 else 400)
+                    .setSlant(if (italic) android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC else android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT).build()
+            }
+            if (fonts.isEmpty()) return Typeface.create(c.family, Typeface.NORMAL)
+            val family = android.graphics.fonts.FontFamily.Builder(fonts[0]).also { b -> fonts.drop(1).forEach { b.addFont(it) } }.build()
+            // Fall back to the system font for characters these files don't cover (accents, symbols, other scripts).
+            val system = android.graphics.fonts.FontFamily.Builder(
+                android.graphics.fonts.Font.Builder(java.io.File("/system/fonts/Roboto-Regular.ttf")).build()).build()
+            return Typeface.CustomFallbackBuilder(family).addCustomFallback(system).setSystemFallback("sans-serif").build()
+        } catch (_: Throwable) {
+            return Typeface.create(c.family, Typeface.NORMAL)
+        }
+    }
 }
 
 /**

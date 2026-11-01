@@ -14,6 +14,7 @@
         <item name="android:colorControlNormal">@color/leaf_page_dim</item>
         <item name="android:textColorPrimary">@color/leaf_page</item>
         <item name="android:textColorSecondary">@color/leaf_page_dim</item>
+        <item name="android:textColorAlertDialogListItem">@color/leaf_page</item>
         <item name="android:textColorHint">@color/leaf_page_dim</item>
     </style>
 </resources>
