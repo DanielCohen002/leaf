@@ -337,8 +337,8 @@ class EpubBook(file: File) : Book {
         val dir = path.substringBeforeLast('/', "")
         val html = readText(path) ?: ""
         // A page that is just one picture (e.g. a cover) is blown up to fill the page and centred.
-        val imageOnly = Regex("(?i)<(img|image)\b").findAll(html).count() == 1 &&
-            html.replace(Regex("(?is)<head\b.*?</head>|<style\b.*?</style>|<[^>]*>"), "").trim().length < 80
+        val imageOnly = Regex("(?i)<(img|image)\\b").findAll(html).count() == 1 &&
+            html.replace(Regex("(?is)<head\\b.*?</head>|<style\\b.*?</style>|<[^>]*>"), "").trim().length < 80
         val h = if (imageOnly) (maxH * 1.08f).toInt() else maxH
         val text = HtmlText.toSpanned(html, { src, w, hh -> loadImage(resolve(dir, src), w, hh, upscale = imageOnly) }, maxW, h)
         if (!imageOnly) return text
