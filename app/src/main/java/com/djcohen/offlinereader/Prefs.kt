@@ -28,50 +28,73 @@ object Fonts {
     fun typeface(index: Int): Typeface = Typeface.create(all[index.coerceIn(all.indices)].second, Typeface.NORMAL)
 }
 
-class Prefs(context: Context) {
+/**
+ * Reading settings, remembered per file format (all EPUBs share one set, all PDFs another, and so on), not per book.
+ * A format that has no saved value yet starts from the old shared value, so earlier choices carry over.
+ */
+class Prefs(context: Context, ext: String = "") {
     private val sp: SharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val format = formatOf(ext)
+
+    private fun key(name: String) = if (format.isEmpty()) name else "$format.$name"
+    private fun int(name: String, def: Int) = sp.getInt(key(name), sp.getInt(name, def))
+    private fun bool(name: String, def: Boolean) = sp.getBoolean(key(name), sp.getBoolean(name, def))
+    private fun putInt(name: String, v: Int) = sp.edit().putInt(key(name), v).apply()
+    private fun putBool(name: String, v: Boolean) = sp.edit().putBoolean(key(name), v).apply()
 
     var font: Int
-        get() = sp.getInt("font", 0)
-        set(v) = sp.edit().putInt("font", v).apply()
+        get() = int("font", 0)
+        set(v) = putInt("font", v)
     var textSizeSp: Int
-        get() = sp.getInt("size", 19)
-        set(v) = sp.edit().putInt("size", v).apply()
+        get() = int("size", 19)
+        set(v) = putInt("size", v)
     /** Line spacing multiplier, stored in hundredths. */
     var spacing: Int
-        get() = sp.getInt("spacing", 140)
-        set(v) = sp.edit().putInt("spacing", v).apply()
+        get() = int("spacing", 140)
+        set(v) = putInt("spacing", v)
     var theme: Int
-        get() = sp.getInt("theme", 2)
-        set(v) = sp.edit().putInt("theme", v).apply()
+        get() = int("theme", 2)
+        set(v) = putInt("theme", v)
     var volumeKeys: Boolean
-        get() = sp.getBoolean("volkeys", true)
-        set(v) = sp.edit().putBoolean("volkeys", v).apply()
+        get() = bool("volkeys", true)
+        set(v) = putBool("volkeys", v)
     /** false: volume-down = next page. true: volume-up = next page. */
     var swapVolume: Boolean
-        get() = sp.getBoolean("swapvol", false)
-        set(v) = sp.edit().putBoolean("swapvol", v).apply()
+        get() = bool("swapvol", false)
+        set(v) = putBool("swapvol", v)
     /** Comics / PDF: right-to-left page order (manga). */
     var rightToLeft: Boolean
-        get() = sp.getBoolean("rtl", false)
-        set(v) = sp.edit().putBoolean("rtl", v).apply()
+        get() = bool("rtl", false)
+        set(v) = putBool("rtl", v)
     /** Comics / PDF: invert page colors (night reading). */
     var invertImages: Boolean
-        get() = sp.getBoolean("invimg", false)
-        set(v) = sp.edit().putBoolean("invimg", v).apply()
+        get() = bool("invimg", false)
+        set(v) = putBool("invimg", v)
     /** Comics / PDF layout: 0 = one page, 1 = two pages side by side (landscape), 2 = continuous vertical scroll. */
     var imageLayout: Int
-        get() = sp.getInt("imglayout", 0)
-        set(v) = sp.edit().putInt("imglayout", v).apply()
+        get() = int("imglayout", 0)
+        set(v) = putInt("imglayout", v)
     /** Two-page mode: show the first page (the cover) on its own. */
     var coverAlone: Boolean
-        get() = sp.getBoolean("coveralone", true)
-        set(v) = sp.edit().putBoolean("coveralone", v).apply()
+        get() = bool("coveralone", true)
+        set(v) = putBool("coveralone", v)
     /** Text books: scroll continuously instead of turning pages. */
     var textScroll: Boolean
-        get() = sp.getBoolean("textscroll", false)
-        set(v) = sp.edit().putBoolean("textscroll", v).apply()
+        get() = bool("textscroll", false)
+        set(v) = putBool("textscroll", v)
     var keepScreenOn: Boolean
-        get() = sp.getBoolean("keepon", true)
-        set(v) = sp.edit().putBoolean("keepon", v).apply()
+        get() = bool("keepon", true)
+        set(v) = putBool("keepon", v)
+
+    companion object {
+        /** Extensions of the same kind of file share settings (.htm/.html, .azw3/.mobi, ...). */
+        fun formatOf(ext: String): String = when (val e = ext.lowercase().trim()) {
+            "txt", "text" -> "txt"
+            "html", "htm", "xhtml" -> "html"
+            "md", "markdown" -> "md"
+            "mobi", "azw", "azw3", "prc" -> "kindle"
+            "cbz", "cbr" -> "cbz"
+            else -> e
+        }
+    }
 }

@@ -53,11 +53,11 @@ class ReaderActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = Library(this)
-        prefs = Prefs(this)
         val id = intent.getStringExtra(EXTRA_ID)
         val found = library.entries().firstOrNull { it.id == id }
         if (found == null) { finish(); return }
         entry = found
+        prefs = Prefs(this, entry.ext)
 
         val root = FrameLayout(this)
         page = PageView(this).apply {

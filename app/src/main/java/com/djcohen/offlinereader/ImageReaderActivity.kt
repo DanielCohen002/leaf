@@ -70,10 +70,10 @@ class ImageReaderActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = Library(this)
-        prefs = Prefs(this)
         val found = library.entries().firstOrNull { it.id == intent.getStringExtra(ReaderActivity.EXTRA_ID) }
         if (found == null) { finish(); return }
         entry = found
+        prefs = Prefs(this, entry.ext)
 
         val root = FrameLayout(this)
         view = ImagePageView(this).apply {
