@@ -7,7 +7,13 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
+import android.widget.ImageView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -22,7 +28,7 @@ import java.util.concurrent.Executors
 class LibraryActivity : Activity() {
     private lateinit var library: Library
     private lateinit var list: ListView
-    private lateinit var empty: TextView
+    private lateinit var empty: View
     private val io = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private var entries: List<Entry> = emptyList()
@@ -34,13 +40,26 @@ class LibraryActivity : Activity() {
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val e = entries[position]
             val row = (convertView as? LinearLayout) ?: LinearLayout(this@LibraryActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                val p = dp(16)
-                setPadding(p, dp(12), p, dp(12))
-                addView(TextView(context).apply { textSize = 17f; maxLines = 2 })
-                addView(TextView(context).apply { textSize = 13f; alpha = 0.6f })
+                // A cream "page" card with a leaf-green tab on the left.
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_pressed), rounded(PAGE_PRESSED, 18))
+                    addState(intArrayOf(), rounded(PAGE, 18))
+                }
+                setPadding(dp(14), dp(14), dp(16), dp(14))
+                addView(View(context).apply { background = rounded(LEAF, 3) }, LinearLayout.LayoutParams(dp(5), dp(38)).apply { marginEnd = dp(14) })
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(TextView(context).apply {
+                        textSize = 17f; maxLines = 2; setTextColor(INK)
+                        typeface = Typeface.create("serif", Typeface.BOLD)
+                    })
+                    addView(TextView(context).apply { textSize = 13f; setTextColor(MUTED) })
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             }
-            (row.getChildAt(0) as TextView).text = e.title
+            val col = row.getChildAt(1) as LinearLayout
+            (col.getChildAt(0) as TextView).text = e.title
             val (chapter, _) = library.position(e.id)
             val (_, offset) = library.position(e.id)
             val resume = when {
@@ -48,31 +67,68 @@ class LibraryActivity : Activity() {
                 chapter > 0 -> "  ·  continue from section ${chapter + 1}"
                 else -> ""
             }
-            (row.getChildAt(1) as TextView).text = e.ext.uppercase() + resume
+            (col.getChildAt(1) as TextView).text = e.ext.uppercase() + resume
             return row
         }
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    private fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply {
+        setColor(color); cornerRadius = radiusDp * resources.displayMetrics.density
+    }
+
+    /** The Leaf mark (half leaf, half page), drawn on the forest background. */
+    private fun logo() = ImageView(this).apply {
+        setImageResource(R.drawable.ic_launcher_foreground)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = Library(this)
 
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(FOREST) }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(12), dp(8), dp(8))
+            setPadding(dp(12), dp(8), dp(16), dp(8))
         }
-        header.addView(TextView(this).apply { text = "Library"; textSize = 26f }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(Button(this).apply { text = "Add books"; setOnClickListener { pickFiles() } })
+        header.addView(logo(), LinearLayout.LayoutParams(dp(64), dp(64)))
+        header.addView(TextView(this).apply {
+            text = "Leaf"; textSize = 30f; setTextColor(PAGE)
+            typeface = Typeface.create("serif", Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(Button(this).apply {
+            text = "Add books"; isAllCaps = false; textSize = 15f; setTextColor(FOREST)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), rounded(LEAF_PRESSED, 24))
+                addState(intArrayOf(), rounded(LEAF, 24))
+            }
+            stateListAnimator = null
+            setPadding(dp(20), 0, dp(20), 0)
+            setOnClickListener { pickFiles() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
         root.addView(header)
 
-        list = ListView(this)
-        empty = TextView(this).apply {
-            text = "No books yet.\nTap “Add books” and choose EPUB, MOBI, FB2, PDF, CBZ comics, TXT, HTML or Markdown files from your phone.\n\nThis app has no internet access at all."
-            textSize = 15f; gravity = Gravity.CENTER; setPadding(dp(32), dp(32), dp(32), dp(32)); alpha = 0.7f
+        list = ListView(this).apply {
+            divider = ColorDrawable(Color.TRANSPARENT)
+            dividerHeight = dp(10)
+            selector = ColorDrawable(Color.TRANSPARENT)
+            setPadding(dp(16), dp(8), dp(16), dp(16))
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        empty = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(32), dp(32), dp(32), dp(64))
+            addView(logo(), LinearLayout.LayoutParams(dp(150), dp(150)))
+            addView(TextView(context).apply {
+                text = "No books yet.\nTap “Add books” and choose EPUB, MOBI, FB2, PDF, CBZ comics, TXT, HTML or Markdown files from your phone.\n\nLeaf has no internet access at all."
+                textSize = 15f; gravity = Gravity.CENTER; setTextColor(PAGE); alpha = 0.8f
+            })
         }
         list.emptyView = empty
         list.adapter = adapter
@@ -182,5 +238,13 @@ class LibraryActivity : Activity() {
 
     companion object {
         private const val REQ_PICK = 1
+        // Leaf palette (matches the icon).
+        private const val FOREST = 0xFF1E3A2A.toInt()
+        private const val LEAF = 0xFF6CC070.toInt()
+        private const val LEAF_PRESSED = 0xFF55A85A.toInt()
+        private const val PAGE = 0xFFFFF8E7.toInt()
+        private const val PAGE_PRESSED = 0xFFEADFC0.toInt()
+        private const val INK = 0xFF22301F.toInt()
+        private const val MUTED = 0xFF5E7F61.toInt()
     }
 }

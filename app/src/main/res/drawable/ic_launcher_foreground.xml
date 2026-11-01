@@ -5,6 +5,13 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="56"
+        android:rotation="-45"
+        android:scaleX="0.92"
+        android:scaleY="0.92">
+
 
     <!-- leaf half -->
     <path
@@ -43,4 +50,5 @@
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:pathData="M59,46 L75,46 M59,54 L75,54 M59,62 L75,62 M59,70 L69,70" />
+    </group>
 </vector>
