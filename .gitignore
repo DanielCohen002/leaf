@@ -6,3 +6,5 @@ local.properties
 .idea/
 *.iml
 captures/
+
+app/src/main/assets/dict.db

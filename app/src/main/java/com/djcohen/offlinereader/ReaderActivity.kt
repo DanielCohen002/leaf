@@ -241,9 +241,60 @@ class ReaderActivity : Activity() {
         page.clearSelection()
     }
 
-    /** Hands the text to any installed dictionary/lookup app. (A built-in offline dictionary is planned.) */
+    private val dictionary by lazy { Dictionary(applicationContext) }
+
+    /** Offline WordNet lookup in a popup; falls back to any installed lookup app on request. */
     private fun lookUpSelection() {
         val t = selText ?: return
+        io.execute {
+            val result = try { dictionary.lookup(t) } catch (e: Throwable) { null }
+            ui.post { if (!isFinishing) showDefinition(t, result) }
+        }
+    }
+
+    private fun showDefinition(query: String, entries: List<DictEntry>?) {
+        val posName = mapOf("n" to "noun", "v" to "verb", "a" to "adjective", "r" to "adverb")
+        val sb = android.text.SpannableStringBuilder()
+        fun span(s: Any, from: Int) = sb.setSpan(s, from, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (entries == null) sb.append("The dictionary couldn't be opened.")
+        else if (entries.isEmpty()) sb.append("No entry for “").append(query.trim()).append("”.\n\nTry selecting a single word.")
+        for (e in entries.orEmpty()) {
+            if (sb.isNotEmpty()) sb.append("\n")
+            var s = sb.length
+            sb.append(e.word).append('\n')
+            span(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), s)
+            span(android.text.style.RelativeSizeSpan(1.3f), s)
+            for (pos in listOf("n", "v", "a", "r")) {
+                val senses = e.senses.filter { it.pos == pos }
+                if (senses.isEmpty()) continue
+                s = sb.length
+                sb.append(posName[pos]).append('\n')
+                span(android.text.style.StyleSpan(android.graphics.Typeface.ITALIC), s)
+                for ((i, sense) in senses.take(8).withIndex()) {
+                    sb.append("${i + 1}. ").append(sense.definition).append('\n')
+                    sense.examples.firstOrNull()?.let { ex ->
+                        s = sb.length
+                        sb.append("    “").append(ex).append("”\n")
+                        span(android.text.style.StyleSpan(android.graphics.Typeface.ITALIC), s)
+                        span(android.text.style.ForegroundColorSpan(0xFF9E9E9E.toInt()), s)
+                    }
+                }
+                if (senses.size > 8) sb.append("    … ${senses.size - 8} more\n")
+            }
+        }
+        val text = TextView(this).apply {
+            this.text = sb; textSize = 16f
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setTextIsSelectable(true)
+        }
+        AlertDialog.Builder(this)
+            .setView(ScrollView(this).apply { addView(text) })
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Other app…") { _, _ -> lookUpExternally(query) }
+            .show()
+    }
+
+    private fun lookUpExternally(t: String) {
         val i = android.content.Intent(android.content.Intent.ACTION_PROCESS_TEXT)
             .setType("text/plain")
             .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT, t)
