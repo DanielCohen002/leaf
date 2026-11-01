@@ -112,6 +112,11 @@ class Library(private val context: Context) {
     /** Folder files the user removed from Leaf: never added back automatically. */
     fun isIgnored(src: String) = sp.getStringSet("ignored_src", emptySet())?.contains(src) == true
 
+    /** Forget which folder files were removed, so a manual sync can bring every missing book back. */
+    fun clearIgnored() {
+        sp.edit().remove("ignored_src").apply()
+    }
+
     fun ignore(src: String) {
         if (src.isEmpty()) return
         val set = HashSet(sp.getStringSet("ignored_src", emptySet()) ?: emptySet())

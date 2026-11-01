@@ -337,7 +337,12 @@ class LibraryActivity : Activity() {
         if (syncing) return
         syncing = true
         lastSync = System.currentTimeMillis()
-        if (!quiet) toast("Looking for new books…")
+        if (!quiet) {
+            // A sync you ask for brings back everything that is in the folder but not in Leaf, even books you removed.
+            // (The automatic check on opening the library still leaves removed books alone.)
+            library.clearIgnored()
+            toast("Looking for books…")
+        }
         io.execute {
             var added = 0
             var lostAccess = false
@@ -468,7 +473,7 @@ class LibraryActivity : Activity() {
     private fun confirmDelete(e: Entry) {
         AlertDialog.Builder(this)
             .setTitle("Remove book?")
-            .setMessage(e.title)
+            .setMessage(e.title + if (e.src.isNotEmpty()) "\n\nThe file in your folder is not touched. Add books > Sync now brings it back." else "")
             .setPositiveButton("Remove") { _, _ -> library.remove(e); refresh() }
             .setNegativeButton("Cancel", null)
             .showLeaf()
