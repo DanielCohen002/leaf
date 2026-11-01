@@ -8,6 +8,7 @@ import android.text.Layout
 import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
@@ -21,7 +22,7 @@ class PageView(context: Context) : View(context) {
 
     private val density = resources.displayMetrics.density
     private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
-    private val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12 * density; textAlign = Paint.Align.CENTER }
+    private val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 15 * density }
 
     private var text: CharSequence = ""
     private var layout: StaticLayout? = null
@@ -39,7 +40,7 @@ class PageView(context: Context) : View(context) {
     val contentHeight get() = (height - insetT - insetB - 2 * vMargin - footerHeight).coerceAtLeast(100)
     private val margin get() = (22 * density).toInt()
     private val vMargin get() = (14 * density).toInt()
-    private val footerHeight get() = (22 * density).toInt()
+    private val footerHeight get() = (30 * density).toInt()
 
     /** Character offset at the top of the current page, used to save and restore the reading position. */
     val currentOffset: Int
@@ -60,7 +61,7 @@ class PageView(context: Context) : View(context) {
         paint.textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, sizeSp.toFloat(), resources.displayMetrics)
         paint.color = fgColor
         paint.linkColor = fgColor
-        footerPaint.color = (fgColor and 0x00FFFFFF) or 0x88000000.toInt()
+        footerPaint.color = (fgColor and 0x00FFFFFF) or 0xBB000000.toInt()
         footerPaint.typeface = typeface
         fg = fgColor; bg = bgColor; spacingMult = spacing
         relayout(keep)
@@ -128,8 +129,17 @@ class PageView(context: Context) : View(context) {
         l.draw(canvas)
         canvas.restore()
 
-        val label = if (footerText.isEmpty()) "${page + 1} / $pageCount" else "$footerText  ·  ${page + 1} / $pageCount"
-        canvas.drawText(label, width / 2f, height - insetB - 8 * density, footerPaint)
+        val y = height - insetB - 8 * density
+        val x0 = (insetL + margin).toFloat()
+        val x1 = (width - insetR - margin).toFloat()
+        val count = "${page + 1} / $pageCount"
+        footerPaint.textAlign = Paint.Align.RIGHT
+        canvas.drawText(count, x1, y, footerPaint)
+        val room = (x1 - x0) - footerPaint.measureText(count) - 16 * density
+        if (footerText.isNotEmpty() && room > 40 * density) {
+            footerPaint.textAlign = Paint.Align.LEFT
+            canvas.drawText(TextUtils.ellipsize(footerText, footerPaint, room, TextUtils.TruncateAt.END).toString(), x0, y, footerPaint)
+        }
     }
 
     private var downX = 0f

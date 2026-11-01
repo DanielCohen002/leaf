@@ -165,7 +165,7 @@ class ReaderActivity : Activity() {
             }
             ui.post {
                 chapter = index
-                page.footerText = b.chapterTitles[index].let { if (it.length > 28) it.take(27) + "…" else it }
+                page.footerText = b.chapterTitles[index]
                 page.setContent(text, offset)
                 loading = false
             }

@@ -81,7 +81,7 @@ internal object HtmlText {
         while (i < sb.length) {
             var j = sb.indexOf('\n', i)
             if (j < 0) j = sb.length
-            if (j - i > 60) sb.setSpan(LeadingMarginSpan.Standard(indent, 0), i, j, Spanned.SPAN_PARAGRAPH)
+            if (j - i > 60) sb.setSpan(LeadingMarginSpan.Standard(indent, 0), i, minOf(j + 1, sb.length), Spanned.SPAN_PARAGRAPH)
             i = j + 1
         }
     }
