@@ -68,7 +68,7 @@ internal object HtmlText {
     }
 
     /**
-     * Render one HTML page. A page that is just a single picture (a cover) is enlarged to fill the page and centred;
+     * Render one HTML page. A page that is just a single picture (a cover) is enlarged to fill the page and centered;
      * [loader] fetches an image by its source string, scaled to the box, enlarging when the last argument is true.
      */
     fun page(html: String, maxW: Int, maxH: Int, loader: (String, Int, Int, Boolean) -> Bitmap?): Spanned {
@@ -82,7 +82,7 @@ internal object HtmlText {
         }
     }
 
-    /** Strip publisher colours/sizes (they break dark mode and font choice), trim, indent paragraphs. */
+    /** Strip publisher colors/sizes (they break dark mode and font choice), trim, indent paragraphs. */
     fun tidy(sb: SpannableStringBuilder): Spanned {
         for (cls in arrayOf(ForegroundColorSpan::class.java, BackgroundColorSpan::class.java, AbsoluteSizeSpan::class.java)) {
             for (s in sb.getSpans(0, sb.length, cls)) sb.removeSpan(s)

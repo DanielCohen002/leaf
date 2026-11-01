@@ -15,8 +15,13 @@ interface ImageBook {
     val pageCount: Int
     /** Render page [index] to fit within [maxW] x [maxH] pixels. May be called from a background thread. */
     fun render(index: Int, maxW: Int, maxH: Int): Bitmap?
+    /** Width / height of page [index] without rendering it (0.7 if unknown). */
+    fun aspect(index: Int): Float
     fun close()
 }
+
+/** Aspect ratio of every page; used to lay out scrolling and two-page views. Slow-ish for huge books, so call off the UI thread. */
+fun ImageBook.allAspects(): FloatArray = FloatArray(pageCount) { aspect(it) }
 
 object ImageBooks {
     val extensions = setOf("pdf", "cbz", "cbr")
@@ -32,13 +37,15 @@ object ImageBooks {
 
 object ImageUtil {
     /** Decode [bytes], sub-sampling large images; scale to fit [maxW] x [maxH] (enlarging too when [upscale]). */
-    fun decode(bytes: ByteArray, maxW: Int, maxH: Int, upscale: Boolean = false): Bitmap? {
+    fun decode(bytes: ByteArray, maxW: Int, maxH: Int, upscale: Boolean = false, maxPixels: Long = 12_000_000L): Bitmap? {
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
             var sample = 1
             while (bounds.outWidth / (sample * 2) >= maxW && bounds.outHeight / (sample * 2) >= maxH) sample *= 2
+            // Very tall strips (webtoons) can be huge: cap the decoded pixel count.
+            while ((bounds.outWidth / sample).toLong() * (bounds.outHeight / sample) > maxPixels) sample *= 2
             val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
                 ?: return null
             val scale = minOf(maxW.toFloat() / bmp.width, maxH.toFloat() / bmp.height, if (upscale) Float.MAX_VALUE else 1f)
@@ -88,6 +95,16 @@ class PdfBook(file: File) : ImageBook {
     }
 
     @Synchronized
+    override fun aspect(index: Int): Float {
+        if (index !in 0 until pageCount) return 0.7f
+        return try {
+            renderer.openPage(index).use { it.width.toFloat() / it.height }
+        } catch (_: Throwable) {
+            0.7f
+        }
+    }
+
+    @Synchronized
     override fun close() {
         renderer.close()
         fd.close()
@@ -132,6 +149,17 @@ class CbzBook(file: File) : ImageBook {
             ImageUtil.decode(zip.getInputStream(entry).use { it.readBytes() }, maxW, maxH)
         } catch (_: Throwable) {
             null
+        }
+    }
+
+    override fun aspect(index: Int): Float {
+        val entry = pages.getOrNull(index) ?: return 0.7f
+        return try {
+            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            zip.getInputStream(entry).use { BitmapFactory.decodeStream(it, null, o) }
+            if (o.outWidth > 0 && o.outHeight > 0) o.outWidth.toFloat() / o.outHeight else 0.7f
+        } catch (_: Throwable) {
+            0.7f
         }
     }
 

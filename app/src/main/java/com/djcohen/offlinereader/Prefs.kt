@@ -55,10 +55,22 @@ class Prefs(context: Context) {
     var rightToLeft: Boolean
         get() = sp.getBoolean("rtl", false)
         set(v) = sp.edit().putBoolean("rtl", v).apply()
-    /** Comics / PDF: invert page colours (night reading). */
+    /** Comics / PDF: invert page colors (night reading). */
     var invertImages: Boolean
         get() = sp.getBoolean("invimg", false)
         set(v) = sp.edit().putBoolean("invimg", v).apply()
+    /** Comics / PDF layout: 0 = one page, 1 = two pages side by side (landscape), 2 = continuous vertical scroll. */
+    var imageLayout: Int
+        get() = sp.getInt("imglayout", 0)
+        set(v) = sp.edit().putInt("imglayout", v).apply()
+    /** Two-page mode: show the first page (the cover) on its own. */
+    var coverAlone: Boolean
+        get() = sp.getBoolean("coveralone", true)
+        set(v) = sp.edit().putBoolean("coveralone", v).apply()
+    /** Text books: scroll continuously instead of turning pages. */
+    var textScroll: Boolean
+        get() = sp.getBoolean("textscroll", false)
+        set(v) = sp.edit().putBoolean("textscroll", v).apply()
     var keepScreenOn: Boolean
         get() = sp.getBoolean("keepon", true)
         set(v) = sp.edit().putBoolean("keepon", v).apply()

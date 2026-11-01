@@ -39,6 +39,51 @@ class PageView(context: Context) : View(context) {
     private var insetL = 0; private var insetT = 0; private var insetR = 0; private var insetB = 0
     private var pendingOffset = 0
 
+    // --- continuous scroll mode (instead of turning pages) -------------------------------------
+    private var scrollMode = false
+    private var scrollPx = 0
+    private val scroller = android.widget.OverScroller(context)
+    private var scrolling = false
+    private var lastY = 0f
+    private var velocity: android.view.VelocityTracker? = null
+
+    private fun maxScroll() = ((layout?.height ?: 0) - contentHeight).coerceAtLeast(0)
+
+    /** Layout y that sits at the top of the text area. */
+    private fun topY(): Int {
+        val l = layout ?: return 0
+        return if (scrollMode) scrollPx else l.getLineTop(pageStartLines[page])
+    }
+
+    private fun firstLine(): Int {
+        val l = layout!!
+        return if (scrollMode) l.getLineForVertical(scrollPx) else pageStartLines[page]
+    }
+
+    private fun lastLine(): Int {
+        val l = layout!!
+        return if (scrollMode) l.getLineForVertical(scrollPx + contentHeight).coerceAtMost(l.lineCount - 1)
+        else (if (page + 1 < pageStartLines.size) pageStartLines[page + 1] else l.lineCount) - 1
+    }
+
+    /** Switch between paged and continuous-scroll reading, keeping the current position. */
+    fun setScrollMode(enabled: Boolean) {
+        if (enabled == scrollMode) return
+        val keep = currentOffset
+        scroller.forceFinished(true)
+        scrollMode = enabled
+        relayout(keep)
+        invalidate()
+    }
+
+    override fun computeScroll() {
+        if (scroller.computeScrollOffset()) {
+            scrollPx = scroller.currY.coerceIn(0, maxScroll())
+            postInvalidateOnAnimation()
+            invalidate()
+        }
+    }
+
     val pageCount get() = pageStartLines.size
     val pageIndex get() = page
     val contentWidth get() = (width - insetL - insetR - 2 * margin).coerceAtLeast(100)
@@ -51,6 +96,7 @@ class PageView(context: Context) : View(context) {
     val currentOffset: Int
         get() {
             val l = layout ?: return 0
+            if (scrollMode) return l.getLineStart(l.getLineForVertical(scrollPx))
             return if (pageStartLines.isEmpty()) 0 else l.getLineStart(pageStartLines[page])
         }
 
@@ -89,17 +135,15 @@ class PageView(context: Context) : View(context) {
     private fun pageRange(): IntRange? {
         val l = layout ?: return null
         if (pageStartLines.isEmpty() || l.lineCount == 0) return null
-        val first = pageStartLines[page]
-        val last = (if (page + 1 < pageStartLines.size) pageStartLines[page + 1] else l.lineCount) - 1
-        return l.getLineStart(first)..l.getLineEnd(last)
+        return l.getLineStart(firstLine())..l.getLineEnd(lastLine())
     }
 
     /** Character offset under screen point (x, y), restricted to the current page. */
     private fun offsetAt(x: Float, y: Float): Int {
         val l = layout ?: return 0
-        val first = pageStartLines[page]
-        val last = (if (page + 1 < pageStartLines.size) pageStartLines[page + 1] else l.lineCount) - 1
-        val ly = y - (insetT + vMargin) + l.getLineTop(first)
+        val first = firstLine()
+        val last = lastLine()
+        val ly = y - (insetT + vMargin) + topY()
         val line = l.getLineForVertical(ly.toInt()).coerceIn(first, last)
         return l.getOffsetForHorizontal(line, x - (insetL + margin)).coerceIn(pageRange()!!)
     }
@@ -137,8 +181,7 @@ class PageView(context: Context) : View(context) {
         if (isEnd && line > l.getLineForOffset(selStart) && l.getLineStart(line) == offset) {
             line -= 1; x = l.getLineRight(line)
         }
-        val first = pageStartLines[page]
-        val y = l.getLineBaseline(line) + paint.descent().toInt() - l.getLineTop(first) + insetT + vMargin
+        val y = l.getLineBaseline(line) + paint.descent().toInt() - topY() + insetT + vMargin
         return floatArrayOf(x + insetL + margin, y.toFloat())
     }
 
@@ -188,6 +231,13 @@ class PageView(context: Context) : View(context) {
         layout = StaticLayout.Builder.obtain(text, 0, len, paint, contentWidth)
             .setLineSpacing(0f, spacingMult).setIncludePad(false).build()
         val l = layout!!
+        if (scrollMode) {
+            pageStartLines = intArrayOf(0)
+            page = 0
+            scrollPx = if (offset < 0) maxScroll()
+            else l.getLineTop(l.getLineForOffset(offset.coerceAtMost(len))).coerceIn(0, maxScroll())
+            return
+        }
         val starts = ArrayList<Int>()
         val avail = contentHeight
         var line = 0
@@ -212,8 +262,31 @@ class PageView(context: Context) : View(context) {
         return p
     }
 
-    fun nextPage(): Boolean { clearSelection(); if (page + 1 >= pageCount) return false; page++; invalidate(); return true }
-    fun prevPage(): Boolean { clearSelection(); if (page <= 0) return false; page--; invalidate(); return true }
+    /** In scroll mode this scrolls by most of a screen; returns false when already at the end. */
+    fun nextPage(): Boolean {
+        clearSelection()
+        if (scrollMode) return scrollBy(+1)
+        if (page + 1 >= pageCount) return false
+        page++; invalidate(); return true
+    }
+
+    fun prevPage(): Boolean {
+        clearSelection()
+        if (scrollMode) return scrollBy(-1)
+        if (page <= 0) return false
+        page--; invalidate(); return true
+    }
+
+    private fun scrollBy(direction: Int): Boolean {
+        val max = maxScroll()
+        if (direction > 0 && scrollPx >= max - 2) return false
+        if (direction < 0 && scrollPx <= 0) return false
+        val target = (scrollPx + direction * (contentHeight * 0.9f).toInt()).coerceIn(0, max)
+        scroller.forceFinished(true)
+        scroller.startScroll(0, scrollPx, 0, target - scrollPx, 250)
+        postInvalidateOnAnimation()
+        return true
+    }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -224,10 +297,8 @@ class PageView(context: Context) : View(context) {
         canvas.drawColor(bg)
         val l = layout ?: return
         if (pageStartLines.isEmpty() || l.lineCount == 0) return
-        val first = pageStartLines[page]
-        val last = (if (page + 1 < pageStartLines.size) pageStartLines[page + 1] else l.lineCount) - 1
-        val top = l.getLineTop(first)
-        val bottom = l.getLineBottom(last)
+        val top = topY()
+        val bottom = if (scrollMode) top + contentHeight else l.getLineBottom(lastLine())
         canvas.save()
         val originX = (insetL + margin).toFloat()
         val originY = (insetT + vMargin).toFloat()
@@ -249,7 +320,7 @@ class PageView(context: Context) : View(context) {
         val y = height - insetB - 8 * density
         val x0 = (insetL + margin).toFloat()
         val x1 = (width - insetR - margin).toFloat()
-        val count = "${page + 1} / $pageCount"
+        val count = if (scrollMode) "${(scrollPx * 100L / maxScroll().coerceAtLeast(1)).toInt()}%" else "${page + 1} / $pageCount"
         footerPaint.textAlign = Paint.Align.RIGHT
         canvas.drawText(count, x1, y, footerPaint)
         val room = (x1 - x0) - footerPaint.measureText(count) - 16 * density
@@ -276,6 +347,12 @@ class PageView(context: Context) : View(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; longPressFired = false
+                scrolling = false
+                if (scrollMode) {
+                    scroller.forceFinished(true)
+                    velocity?.recycle()
+                    velocity = android.view.VelocityTracker.obtain().also { it.addMovement(e) }
+                }
                 dragging = nearHandle(e.x, e.y)
                 dragMinEnd = -1
                 if (dragging == 0) handler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
@@ -289,21 +366,51 @@ class PageView(context: Context) : View(context) {
                     else selStart = minOf(o, selEnd - 1)
                     onSelection?.invoke(selectedText())
                     invalidate()
+                } else if (scrollMode && !longPressFired) {
+                    velocity?.addMovement(e)
+                    if (!scrolling && abs(e.y - downY) > slop && abs(e.y - downY) > abs(e.x - downX)) {
+                        scrolling = true
+                        handler.removeCallbacks(longPress)
+                        clearSelection()
+                        lastY = e.y
+                    }
+                    if (scrolling) {
+                        scrollPx = (scrollPx + (lastY - e.y).toInt()).coerceIn(0, maxScroll())
+                        lastY = e.y
+                        invalidate()
+                    }
                 } else if (abs(e.x - downX) > slop || abs(e.y - downY) > slop) {
                     handler.removeCallbacks(longPress)
                 }
                 return true
             }
-            MotionEvent.ACTION_CANCEL -> { handler.removeCallbacks(longPress); dragging = 0; return true }
+            MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPress); dragging = 0; scrolling = false
+                velocity?.recycle(); velocity = null
+                return true
+            }
             MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(longPress)
                 val wasDragging = dragging != 0
                 dragging = 0
+                if (scrolling) {
+                    velocity?.let {
+                        it.addMovement(e)
+                        it.computeCurrentVelocity(1000)
+                        scroller.fling(0, scrollPx, 0, -it.yVelocity.toInt(), 0, 0, 0, maxScroll())
+                        it.recycle()
+                    }
+                    velocity = null
+                    scrolling = false
+                    postInvalidateOnAnimation()
+                    return true
+                }
+                velocity?.recycle(); velocity = null
                 if (longPressFired || wasDragging) return true
                 if (hasSelection) { clearSelection(); return true }   // a tap just dismisses the selection
                 val dx = e.x - downX
                 val dy = e.y - downY
-                if (abs(dx) > 70 * density && abs(dx) > abs(dy) * 1.5f) {
+                if (!scrollMode && abs(dx) > 70 * density && abs(dx) > abs(dy) * 1.5f) {
                     onZone?.invoke(if (dx < 0) Zone.NEXT else Zone.PREV)
                 } else if (abs(dx) < 20 * density && abs(dy) < 20 * density) {
                     val f = e.x / width

@@ -152,6 +152,7 @@ class ReaderActivity : Activity() {
     private fun applyStyle() {
         val t = Themes.all[prefs.theme.coerceIn(Themes.all.indices)]
         page.setStyle(Fonts.typeface(prefs.font), prefs.textSizeSp, prefs.spacing / 100f, t.fg, t.bg)
+        page.setScrollMode(prefs.textScroll)
         window.decorView.setBackgroundColor(t.bg)
         if (prefs.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -331,7 +332,7 @@ class ReaderActivity : Activity() {
             })
         })
 
-        label("Colours")
+        label("Colors")
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         Themes.all.forEachIndexed { i, t ->
             group.addView(RadioButton(this).apply { text = if (i == 2) "Dark (inverted)" else t.name; id = 1000 + i })
@@ -343,6 +344,7 @@ class ReaderActivity : Activity() {
         fun check(text: String, value: Boolean, set: (Boolean) -> Unit) = CheckBox(this).apply {
             this.text = text; isChecked = value; setOnCheckedChangeListener { _, c -> set(c) }
         }.also { box.addView(it) }
+        check("Scroll instead of turning pages", prefs.textScroll) { prefs.textScroll = it; applyStyle() }
         check("Volume keys turn pages", prefs.volumeKeys) { prefs.volumeKeys = it }
         check("Swap volume keys (volume up = next)", prefs.swapVolume) { prefs.swapVolume = it }
         check("Keep screen on", prefs.keepScreenOn) { prefs.keepScreenOn = it; applyStyle() }

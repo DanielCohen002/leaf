@@ -71,7 +71,7 @@ class ImagePageView(context: Context) : View(context) {
         fit()
     }
 
-    /** Keep the picture covering the view when zoomed in, centred when smaller than the view. */
+    /** Keep the picture covering the view when zoomed in, centered when smaller than the view. */
     private fun clamp() {
         val b = bitmap ?: return
         val r = RectF(0f, 0f, b.width.toFloat(), b.height.toFloat())
