@@ -38,6 +38,8 @@ class ReaderActivity : Activity() {
     private lateinit var page: PageView
     private lateinit var topBar: TextView
     private lateinit var bottomBar: LinearLayout
+    private lateinit var selBar: LinearLayout
+    private var selText: String? = null
     private var chapter = 0
     private var loading = true
     private var overlayVisible = false
@@ -90,12 +92,37 @@ class ReaderActivity : Activity() {
         barButton("Aa") { showSettings() }
         barButton("Chapter ›") { skipChapter(1) }
         root.addView(bottomBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        selBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xF0202020.toInt()); visibility = View.GONE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        fun selButton(label: String, action: () -> Unit) = Button(this).apply {
+            text = label; isAllCaps = false; setOnClickListener { action() }
+            selBar.addView(this, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        selButton("Copy") { copySelection() }
+        selButton("Look up") { lookUpSelection() }
+        selButton("Done") { page.clearSelection() }
+        root.addView(selBar, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        page.onSelection = { t ->
+            selText = t
+            if (t == null) selBar.visibility = View.GONE
+            else {
+                setOverlay(false)
+                (selBar.layoutParams as FrameLayout.LayoutParams).gravity =
+                    if (page.selectionY() > page.height / 2f) Gravity.TOP else Gravity.BOTTOM
+                selBar.requestLayout()
+                selBar.visibility = View.VISIBLE
+            }
+        }
         setContentView(root)
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val b = insets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             page.setInsets(b.left, b.top, b.right, b.bottom)
             barTop = b.top; barBottom = b.bottom
+            selBar.setPadding(dp(8) + b.left, dp(8) + b.top, dp(8) + b.right, dp(8) + b.bottom)
             topBar.setPadding(dp(16) + b.left, dp(12) + b.top, dp(16) + b.right, dp(12))
             bottomBar.setPadding(dp(8) + b.left, dp(8), dp(8) + b.right, dp(8) + b.bottom)
             insets
@@ -202,6 +229,30 @@ class ReaderActivity : Activity() {
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    // --- selection actions -----------------------------------------------------------------
+
+    private fun copySelection() {
+        val t = selText ?: return
+        (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+            .setPrimaryClip(android.content.ClipData.newPlainText("Selected text", t))
+        Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+        page.clearSelection()
+    }
+
+    /** Hands the text to any installed dictionary/lookup app. (A built-in offline dictionary is planned.) */
+    private fun lookUpSelection() {
+        val t = selText ?: return
+        val i = android.content.Intent(android.content.Intent.ACTION_PROCESS_TEXT)
+            .setType("text/plain")
+            .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT, t)
+            .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+        try {
+            startActivity(android.content.Intent.createChooser(i, "Look up “$t”"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "No lookup app installed", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // --- settings --------------------------------------------------------------------------
