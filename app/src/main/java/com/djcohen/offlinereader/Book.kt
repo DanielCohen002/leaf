@@ -327,7 +327,7 @@ class EpubBook(file: File) : Book {
         val path = spine[index]
         if (path.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp")) {
             val sb = SpannableStringBuilder("￼")
-            loadImage(path, maxW, maxH)?.let { bmp ->
+            loadImage(path, maxW, (maxH * 1.08f).toInt(), upscale = true)?.let { bmp ->
                 val d = BitmapDrawable(null, bmp).apply { setBounds(0, 0, bmp.width, bmp.height) }
                 sb.setSpan(ImageSpan(d), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
@@ -336,10 +336,18 @@ class EpubBook(file: File) : Book {
         }
         val dir = path.substringBeforeLast('/', "")
         val html = readText(path) ?: ""
-        return HtmlText.toSpanned(html, { src, w, h -> loadImage(resolve(dir, src), w, h) }, maxW, maxH)
+        // A page that is just one picture (e.g. a cover) is blown up to fill the page and centred.
+        val imageOnly = Regex("(?i)<(img|image)\b").findAll(html).count() == 1 &&
+            html.replace(Regex("(?is)<head\b.*?</head>|<style\b.*?</style>|<[^>]*>"), "").trim().length < 80
+        val h = if (imageOnly) (maxH * 1.08f).toInt() else maxH
+        val text = HtmlText.toSpanned(html, { src, w, hh -> loadImage(resolve(dir, src), w, hh, upscale = imageOnly) }, maxW, h)
+        if (!imageOnly) return text
+        return SpannableStringBuilder(text).also {
+            it.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), 0, it.length, Spanned.SPAN_PARAGRAPH)
+        }
     }
 
-    private fun loadImage(path: String, maxW: Int, maxH: Int): Bitmap? {
+    private fun loadImage(path: String, maxW: Int, maxH: Int, upscale: Boolean = false): Bitmap? {
         val e = zip.getEntry(path) ?: return null
         return try {
             val bytes = zip.getInputStream(e).use { it.readBytes() }
@@ -350,8 +358,8 @@ class EpubBook(file: File) : Book {
             while (bounds.outWidth / (sample * 2) >= maxW && bounds.outHeight / (sample * 2) >= maxH) sample *= 2
             val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
                 ?: return null
-            val scale = minOf(maxW.toFloat() / bmp.width, maxH.toFloat() / bmp.height, 1f)
-            if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt().coerceAtLeast(1), (bmp.height * scale).toInt().coerceAtLeast(1), true)
+            val scale = minOf(maxW.toFloat() / bmp.width, maxH.toFloat() / bmp.height, if (upscale) Float.MAX_VALUE else 1f)
+            if (scale != 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt().coerceAtLeast(1), (bmp.height * scale).toInt().coerceAtLeast(1), true)
             else bmp
         } catch (_: Throwable) { null }
     }
