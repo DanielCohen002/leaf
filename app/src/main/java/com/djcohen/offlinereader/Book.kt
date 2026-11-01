@@ -50,7 +50,7 @@ internal object HtmlText {
     private val head = Regex("(?is)<head\\b.*?</head>")
     private val style = Regex("(?is)<style\\b.*?</style>")
     private val script = Regex("(?is)<script\\b.*?</script>")
-    private val svgImage = Regex("(?is)<image\b[^>]*?href\s*=\s*[\"']([^\"']+)[\"'][^>]*>")
+    private val svgImage = Regex("(?is)<image\\b[^>]*?href\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>")
     private val prolog = Regex("(?is)<\\?xml.*?\\?>|<!DOCTYPE[^>]*>")
 
     fun toSpanned(html: String, images: ((String, Int, Int) -> Bitmap?)?, maxW: Int, maxH: Int): Spanned {
