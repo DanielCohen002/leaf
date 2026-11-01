@@ -28,7 +28,7 @@ connection. There is no cloud sync, no analytics, and no web dictionary: lookups
 ## Download
 
 Get the latest `Leaflet-<version>.apk` from the
-[Releases page](https://github.com/DanielCohen002/leaf/releases) and open it on your phone (64-bit ARM,
+[Releases page](https://github.com/DanielCohen002/leaflet/releases) and open it on your phone (64-bit ARM,
 Android 11 or newer). You may need to allow installs from your browser or file manager. Google Play Protect can
 show an "App scan recommended" prompt because the app isn't from the Play Store: choose **Install without
 scanning** (or **Scan app**). New versions install over the old one and keep your library.
