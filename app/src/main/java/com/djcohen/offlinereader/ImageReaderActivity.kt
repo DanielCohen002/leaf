@@ -28,6 +28,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
 
 /**
  * Reader for page-image books (PDF and comic archives) with three layouts:
@@ -55,6 +56,10 @@ class ImageReaderActivity : Activity() {
     private var renderH = 0
 
     private val io = Executors.newSingleThreadExecutor()
+    // Page rendering runs on its own threads so that preloading never makes the page you asked for wait in line.
+    private val loader = Executors.newFixedThreadPool(2)
+    private val inFlight = HashMap<Int, FutureTask<Bitmap?>>()   // UI thread only
+    @Volatile private var generation = 0                          // bumped whenever cached pages become invalid
     private val ui = Handler(Looper.getMainLooper())
     private val budget = (Runtime.getRuntime().maxMemory() / 8).toInt()
     private val cache = object : LruCache<Int, Bitmap>(budget) {          // single pages / spreads, keyed by first page
@@ -164,7 +169,7 @@ class ImageReaderActivity : Activity() {
             val h = b - t
             if (w > 0 && h > 0 && (w != orr - ol || h != ob - ot)) {
                 renderW = (w * 1.5f).toInt(); renderH = (h * 1.5f).toInt()
-                cache.evictAll(); scrollCache.evictAll()
+                resetCaches()
                 if (book != null) reload() else openBook()
             }
         }
@@ -214,7 +219,7 @@ class ImageReaderActivity : Activity() {
         else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         view.visibility = if (layoutMode == 2) View.GONE else View.VISIBLE
         scrollView.visibility = if (layoutMode == 2) View.VISIBLE else View.GONE
-        cache.evictAll(); scrollCache.evictAll()
+        resetCaches()
         reload()
     }
 
@@ -311,6 +316,35 @@ class ImageReaderActivity : Activity() {
         seek.progress = page
     }
 
+    /** Forget every rendered page (after a layout, size or direction change). Running renders are ignored when they finish. */
+    private fun resetCaches() {
+        generation++
+        inFlight.clear()
+        cache.evictAll()
+        scrollCache.evictAll()
+    }
+
+    /** Start rendering [key] in the background, or join the render already running for it. UI thread only. */
+    private fun pageTask(b: ImageBook, key: Int): FutureTask<Bitmap?> {
+        inFlight[key]?.let { return it }
+        val mode = layoutMode
+        val w = renderW
+        val h = renderH
+        val gen = generation
+        val task = object : FutureTask<Bitmap?>({
+            val bmp = if (mode == 1) renderSpread(b, key) else b.render(key, w, h)
+            if (bmp != null && gen == generation) cache.put(key, bmp)
+            bmp
+        }) {
+            override fun done() {
+                ui.post { if (inFlight[key] === this) inFlight.remove(key) }
+            }
+        }
+        inFlight[key] = task
+        loader.execute(task)
+        return task
+    }
+
     private fun show(index: Int) {
         val b = book ?: return
         page = if (layoutMode == 1 && spreadStarts.isNotEmpty()) spreadStarts[spreadIndex(index)] else index.coerceIn(0, b.pageCount - 1)
@@ -322,9 +356,10 @@ class ImageReaderActivity : Activity() {
             prefetch(shown)
             return
         }
+        val task = pageTask(b, shown)
         io.execute {
-            val bmp = if (layoutMode == 1) renderSpread(b, shown) else b.render(shown, renderW, renderH)
-            if (bmp != null) cache.put(shown, bmp)
+            if (page != shown) return@execute        // already moved on; the render still lands in the cache
+            val bmp = try { task.get() } catch (_: Throwable) { null }
             ui.post {
                 if (page == shown && !isDestroyed) {
                     if (bmp != null) view.setBitmap(bmp)
@@ -335,24 +370,19 @@ class ImageReaderActivity : Activity() {
         }
     }
 
+    /** Pages worth having ready: two ahead and one behind. */
     private fun neighbors(from: Int): List<Int> {
         val b = book ?: return emptyList()
         return if (layoutMode == 1 && spreadStarts.isNotEmpty()) {
             val i = spreadIndex(from)
-            listOfNotNull(spreadStarts.getOrNull(i + 1), spreadStarts.getOrNull(i - 1))
-        } else listOf(from + 1, from - 1).filter { it in 0 until b.pageCount }
+            listOfNotNull(spreadStarts.getOrNull(i + 1), spreadStarts.getOrNull(i + 2), spreadStarts.getOrNull(i - 1))
+        } else listOf(from + 1, from + 2, from - 1).filter { it in 0 until b.pageCount }
     }
 
     private fun prefetch(from: Int) {
         val b = book ?: return
         for (i in neighbors(from)) {
-            if (cache.get(i) != null) continue
-            io.execute {
-                if (!isDestroyed && cache.get(i) == null) {
-                    val bmp = if (layoutMode == 1) renderSpread(b, i) else b.render(i, renderW, renderH)
-                    bmp?.let { cache.put(i, it) }
-                }
-            }
+            if (cache.get(i) == null) pageTask(b, i)
         }
     }
 
@@ -423,11 +453,11 @@ class ImageReaderActivity : Activity() {
 
         check("Show the first page (cover) on its own in two-page mode", prefs.coverAlone) {
             prefs.coverAlone = it
-            if (layoutMode == 1) { computeSpreads(); cache.evictAll(); show(page) }
+            if (layoutMode == 1) { computeSpreads(); resetCaches(); show(page) }
         }
         check("Right-to-left reading (manga)", prefs.rightToLeft) {
             prefs.rightToLeft = it
-            if (layoutMode == 1) { cache.evictAll(); show(page) }
+            if (layoutMode == 1) { resetCaches(); show(page) }
         }
         check("Invert colors", prefs.invertImages) { prefs.invertImages = it; applyPrefs() }
         check("Volume keys turn pages", prefs.volumeKeys) { prefs.volumeKeys = it }
@@ -466,6 +496,7 @@ class ImageReaderActivity : Activity() {
     override fun onDestroy() {
         io.execute { book?.close() }
         io.shutdown()
+        loader.shutdownNow()
         super.onDestroy()
     }
 }
