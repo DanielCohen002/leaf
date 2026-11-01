@@ -24,7 +24,7 @@ interface ImageBook {
 fun ImageBook.allAspects(): FloatArray = FloatArray(pageCount) { aspect(it) }
 
 object ImageBooks {
-    val extensions = setOf("pdf", "cbz", "cbr")
+    val extensions = setOf("pdf", "cbz", "cbr", "cb7", "cbt")
 
     fun isImageFormat(ext: String) = ext.lowercase() in extensions
 

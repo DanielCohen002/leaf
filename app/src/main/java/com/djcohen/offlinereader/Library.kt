@@ -39,12 +39,31 @@ class Library(private val context: Context) {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
             if (it.moveToFirst()) display = it.getString(0) ?: display
         }
-        val ext = display.substringAfterLast('.', "").lowercase()
-        if (ext !in BookLoader.supportedExtensions) throw IllegalArgumentException("Unsupported file type: $display")
+        val originalExt = display.substringAfterLast('.', "").lowercase()
+        if (originalExt !in BookLoader.supportedExtensions) throw IllegalArgumentException("Unsupported file type: $display")
         val id = UUID.randomUUID().toString()
-        val dest = File(dir, "$id.$ext")
+        var dest = File(dir, "$id.$originalExt")
+        var ext = originalExt
         context.contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { input.copyTo(it) } }
         try {
+            // RAR / 7z / tar comics are unpacked once into a plain .cbz, which the comic reader opens directly.
+            // (Many ".cbr" files are really zips; those are simply renamed.)
+            if (originalExt in ComicConverter.archiveExtensions) {
+                val converted = File(dir, "$id.cbz")
+                try {
+                    if (ComicConverter.isZip(dest)) {
+                        if (!dest.renameTo(converted)) { dest.copyTo(converted); dest.delete() }
+                    } else {
+                        ComicConverter.toCbz(dest, converted)
+                        dest.delete()
+                    }
+                } catch (t: Throwable) {
+                    converted.delete()
+                    throw t
+                }
+                dest = converted
+                ext = "cbz"
+            }
             // Books that carry their own title (EPUB, MOBI, FB2...) use it; the rest are named after the original
             // file. The stored copy is called "<id>.<ext>", so a title equal to the id means "no real title".
             val fromName = display.substringBeforeLast('.').replace('_', ' ').trim()
@@ -63,7 +82,8 @@ class Library(private val context: Context) {
             save(entries() + entry)
             return entry
         } catch (t: Throwable) {
-            dest.delete()
+            File(dir, "$id.$originalExt").delete()
+            File(dir, "$id.cbz").delete()
             throw IllegalArgumentException("Couldn't read $display: ${t.message}")
         }
     }

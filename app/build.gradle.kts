@@ -8,11 +8,13 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.djcohen.offlinereader"
+        applicationId = "com.djcohen.leaf"
         minSdk = 30
         targetSdk = 36
         versionCode = 1
         versionName = "0.1"
+        // 64-bit phones only: keeps the bundled archive library (RAR/7z support) from bloating the APK.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -33,4 +35,7 @@ kotlin {
     jvmToolchain(17)
 }
 
-// Intentionally no dependencies: no networking code, no third-party libraries.
+dependencies {
+    // libarchive (BSD) + Java bindings (Apache 2.0): unpacks RAR/RAR5/7z/tar comics. Local code only, no networking.
+    implementation("me.zhanghai.android.libarchive:library:1.1.6")
+}

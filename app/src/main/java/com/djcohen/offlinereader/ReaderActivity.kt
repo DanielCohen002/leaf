@@ -264,6 +264,7 @@ class ReaderActivity : Activity() {
             var s = sb.length
             sb.append(e.word).append('\n')
             span(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), s)
+            span(android.text.style.ForegroundColorSpan(0xFFFFF8E7.toInt()), s)
             span(android.text.style.RelativeSizeSpan(1.3f), s)
             for (pos in listOf("n", "v", "a", "r")) {
                 val senses = e.senses.filter { it.pos == pos }
@@ -271,20 +272,21 @@ class ReaderActivity : Activity() {
                 s = sb.length
                 sb.append(posName[pos]).append('\n')
                 span(android.text.style.StyleSpan(android.graphics.Typeface.ITALIC), s)
+                span(android.text.style.ForegroundColorSpan(0xFF6CC070.toInt()), s)
                 for ((i, sense) in senses.take(8).withIndex()) {
                     sb.append("${i + 1}. ").append(sense.definition).append('\n')
                     sense.examples.firstOrNull()?.let { ex ->
                         s = sb.length
                         sb.append("    “").append(ex).append("”\n")
                         span(android.text.style.StyleSpan(android.graphics.Typeface.ITALIC), s)
-                        span(android.text.style.ForegroundColorSpan(0xFF9E9E9E.toInt()), s)
+                        span(android.text.style.ForegroundColorSpan(0xFFB9D1BF.toInt()), s)
                     }
                 }
                 if (senses.size > 8) sb.append("    … ${senses.size - 8} more\n")
             }
         }
         val text = TextView(this).apply {
-            this.text = sb; textSize = 16f; setTextColor(0xFFEDEDED.toInt())
+            this.text = sb; textSize = 16f; setTextColor(0xFFFFF8E7.toInt())
             setPadding(dp(20), dp(8), dp(20), dp(8))
             setTextIsSelectable(true)
         }

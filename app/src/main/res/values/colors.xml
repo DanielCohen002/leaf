@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Leaf palette (matches the icon and the library screen). -->
+    <color name="leaf_forest">#1E3A2A</color>
+    <color name="leaf_green">#6CC070</color>
+    <color name="leaf_page">#FFF8E7</color>
+    <color name="leaf_page_dim">#B9D1BF</color>
+</resources>

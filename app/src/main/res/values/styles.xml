@@ -1,5 +1,19 @@
 <resources>
     <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">@color/ic_launcher_background</item>
+        <item name="android:alertDialogTheme">@style/LeafDialog</item>
+    </style>
+
+    <!-- Every dialog (settings, chapters, dictionary, rename...) in the Leaf colors instead of the system's blue. -->
+    <style name="LeafDialog" parent="@android:style/Theme.DeviceDefault.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/leaf_dialog_bg</item>
+        <item name="android:colorBackground">@color/leaf_forest</item>
+        <item name="android:colorBackgroundFloating">@color/leaf_forest</item>
+        <item name="android:colorAccent">@color/leaf_green</item>
+        <item name="android:colorControlActivated">@color/leaf_green</item>
+        <item name="android:colorControlNormal">@color/leaf_page_dim</item>
+        <item name="android:textColorPrimary">@color/leaf_page</item>
+        <item name="android:textColorSecondary">@color/leaf_page_dim</item>
+        <item name="android:textColorHint">@color/leaf_page_dim</item>
     </style>
 </resources>
