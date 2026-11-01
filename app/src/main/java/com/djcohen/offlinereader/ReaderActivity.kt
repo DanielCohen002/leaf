@@ -290,20 +290,7 @@ class ReaderActivity : Activity() {
         AlertDialog.Builder(this)
             .setView(ScrollView(this).apply { addView(text) })
             .setPositiveButton("Close", null)
-            .setNeutralButton("Other app…") { _, _ -> lookUpExternally(query) }
             .show()
-    }
-
-    private fun lookUpExternally(t: String) {
-        val i = android.content.Intent(android.content.Intent.ACTION_PROCESS_TEXT)
-            .setType("text/plain")
-            .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT, t)
-            .putExtra(android.content.Intent.EXTRA_PROCESS_TEXT_READONLY, true)
-        try {
-            startActivity(android.content.Intent.createChooser(i, "Look up “$t”"))
-        } catch (e: Exception) {
-            Toast.makeText(this, "No lookup app installed", Toast.LENGTH_SHORT).show()
-        }
     }
 
     // --- settings --------------------------------------------------------------------------

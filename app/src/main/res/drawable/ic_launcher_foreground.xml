@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Leaf: the left half is a leaf, the right half is a page with a folded corner. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- leaf half -->
+    <path
+        android:fillColor="#6CC070"
+        android:pathData="M54,24 C38,30 26,48 31,66 C34,76 44,82 54,84 L54,24 Z" />
+    <!-- page half -->
+    <path
+        android:fillColor="#FFF8E7"
+        android:pathData="M54,24 L70,24 L81,35 L81,84 L54,84 Z" />
+    <!-- folded corner -->
+    <path
+        android:fillColor="#D8CDA6"
+        android:pathData="M70,24 L70,35 L81,35 Z" />
+
+    <!-- leaf veins -->
+    <path
+        android:strokeColor="#3E9A4B"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M54,44 L41,36 M54,56 L37,50 M54,68 L39,64" />
+    <!-- seam / midrib -->
+    <path
+        android:strokeColor="#2E7D3C"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M54,26 L54,84" />
+    <!-- stem -->
+    <path
+        android:strokeColor="#2E7D3C"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:pathData="M54,84 L51,89" />
+    <!-- text lines on the page -->
+    <path
+        android:strokeColor="#B8AE8A"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M59,46 L75,46 M59,54 L75,54 M59,62 L75,62 M59,70 L69,70" />
+</vector>
