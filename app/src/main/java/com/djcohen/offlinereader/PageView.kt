@@ -22,7 +22,7 @@ class PageView(context: Context) : View(context) {
 
     private val density = resources.displayMetrics.density
     private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
-    private val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 15 * density }
+    private val footerPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 16 * density }
 
     private var text: CharSequence = ""
     private var layout: StaticLayout? = null
@@ -40,7 +40,7 @@ class PageView(context: Context) : View(context) {
     val contentHeight get() = (height - insetT - insetB - 2 * vMargin - footerHeight).coerceAtLeast(100)
     private val margin get() = (22 * density).toInt()
     private val vMargin get() = (14 * density).toInt()
-    private val footerHeight get() = (30 * density).toInt()
+    private val footerHeight get() = (footerPaint.textSize + 16 * density).toInt()
 
     /** Character offset at the top of the current page, used to save and restore the reading position. */
     val currentOffset: Int
@@ -63,6 +63,7 @@ class PageView(context: Context) : View(context) {
         paint.linkColor = fgColor
         footerPaint.color = (fgColor and 0x00FFFFFF) or 0xBB000000.toInt()
         footerPaint.typeface = typeface
+        footerPaint.textSize = maxOf(paint.textSize * 0.85f, 16 * density)
         fg = fgColor; bg = bgColor; spacingMult = spacing
         relayout(keep)
         invalidate()

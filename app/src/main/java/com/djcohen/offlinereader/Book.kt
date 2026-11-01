@@ -5,6 +5,9 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.text.Html
+import android.text.Layout
+import android.text.style.AlignmentSpan
+import android.text.style.ImageSpan
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.AbsoluteSizeSpan
@@ -47,10 +50,11 @@ internal object HtmlText {
     private val head = Regex("(?is)<head\\b.*?</head>")
     private val style = Regex("(?is)<style\\b.*?</style>")
     private val script = Regex("(?is)<script\\b.*?</script>")
+    private val svgImage = Regex("(?is)<image\b[^>]*?href\s*=\s*[\"']([^\"']+)[\"'][^>]*>")
     private val prolog = Regex("(?is)<\\?xml.*?\\?>|<!DOCTYPE[^>]*>")
 
     fun toSpanned(html: String, images: ((String, Int, Int) -> Bitmap?)?, maxW: Int, maxH: Int): Spanned {
-        val cleaned = html.replace(prolog, "").replace(head, "").replace(style, "").replace(script, "")
+        val cleaned = html.replace(prolog, "").replace(svgImage, "<img src=\"$1\"/>").replace(head, "").replace(style, "").replace(script, "")
         val getter = Html.ImageGetter { src ->
             val bmp = images?.invoke(src, maxW, maxH)
             if (bmp == null) null else BitmapDrawable(null, bmp).apply { setBounds(0, 0, bmp.width, bmp.height) }
@@ -183,6 +187,7 @@ class EpubBook(file: File) : Book {
     override var title: String = file.nameWithoutExtension
         private set
     override val chapterTitles: List<String> get() = titles
+    private var coverPath: String? = null
 
     init {
         val container = readText("META-INF/container.xml") ?: throw IllegalArgumentException("Not an EPUB")
@@ -191,6 +196,13 @@ class EpubBook(file: File) : Book {
         val opf = readText(opfPath) ?: throw IllegalArgumentException("EPUB package missing")
         parseOpf(opf, opfDir)
         if (spine.isEmpty()) throw IllegalArgumentException("EPUB has no readable chapters")
+        // Cover only in the manifest (not shown by the first page)? Add it as its own first page.
+        coverPath?.let { cover ->
+            val name = cover.substringAfterLast('/')
+            if (zip.getEntry(cover) != null && readText(spine[0])?.contains(name) != true) {
+                spine.add(0, cover); titles.add(0, "Cover")
+            }
+        }
     }
 
     private fun parseOpf(opf: String, opfDir: String) {
@@ -201,6 +213,7 @@ class EpubBook(file: File) : Book {
         p.setInput(opf.reader())
         var inTitle = false
         var gotTitle = false
+        var coverMetaId: String? = null
         var ev = p.eventType
         while (ev != XmlPullParser.END_DOCUMENT) {
             if (ev == XmlPullParser.START_TAG) {
@@ -212,6 +225,7 @@ class EpubBook(file: File) : Book {
                         manifest[id] = Triple(resolve(opfDir, href), p.getAttributeValue(null, "media-type") ?: "",
                             p.getAttributeValue(null, "properties") ?: "")
                     }
+                    "meta" -> if (p.getAttributeValue(null, "name") == "cover") coverMetaId = p.getAttributeValue(null, "content")
                     "spine" -> tocId = p.getAttributeValue(null, "toc")
                     "itemref" -> p.getAttributeValue(null, "idref")?.let { order += it }
                 }
@@ -235,6 +249,8 @@ class EpubBook(file: File) : Book {
         try {
             if (nav != null) readNav(nav.first, labels) else if (ncx != null) readNcx(ncx.first, labels)
         } catch (_: Exception) { /* fall back to generic titles */ }
+        coverPath = manifest.values.firstOrNull { it.third.split(' ').contains("cover-image") }?.first
+            ?: coverMetaId?.let { manifest[it]?.first }
         for ((i, path) in spine.withIndex()) titles += labels[path]?.takeIf { it.isNotBlank() } ?: "Section ${i + 1}"
     }
 
@@ -309,6 +325,15 @@ class EpubBook(file: File) : Book {
 
     override fun load(index: Int, maxW: Int, maxH: Int): Spanned {
         val path = spine[index]
+        if (path.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp")) {
+            val sb = SpannableStringBuilder("￼")
+            loadImage(path, maxW, maxH)?.let { bmp ->
+                val d = BitmapDrawable(null, bmp).apply { setBounds(0, 0, bmp.width, bmp.height) }
+                sb.setSpan(ImageSpan(d), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            sb.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), 0, 1, Spanned.SPAN_PARAGRAPH)
+            return sb
+        }
         val dir = path.substringBeforeLast('/', "")
         val html = readText(path) ?: ""
         return HtmlText.toSpanned(html, { src, w, h -> loadImage(resolve(dir, src), w, h) }, maxW, maxH)
