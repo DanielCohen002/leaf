@@ -3,6 +3,9 @@ package com.djcohen.offlinereader
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Bitmap
+import android.util.LruCache
+import android.widget.GridView
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -30,6 +33,13 @@ class LibraryActivity : Activity() {
     private lateinit var library: Library
     private lateinit var list: ListView
     private lateinit var empty: View
+    private lateinit var grid: GridView
+    private lateinit var toggle: ImageView
+    private var gridCols = 3
+    private var gridCellW = 0
+    private val covers = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
     private val io = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private var entries: List<Entry> = emptyList()
@@ -75,6 +85,63 @@ class LibraryActivity : Activity() {
         }
     }
 
+    /** Grid of covers: a cover picture (or a leaf-style placeholder) with the title underneath. */
+    private val gridAdapter = object : BaseAdapter() {
+        override fun getCount() = entries.size
+        override fun getItem(position: Int) = entries[position]
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+            val e = entries[position]
+            val cell = (convertView as? LinearLayout) ?: LinearLayout(this@LibraryActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(CoverView(context), LinearLayout.LayoutParams(gridCellW, (gridCellW * 1.5f).toInt()))
+                addView(TextView(context).apply {
+                    textSize = 12.5f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setTextColor(PAGE)
+                    typeface = Typeface.create("serif", Typeface.NORMAL)
+                    setPadding(dp(2), dp(7), dp(2), 0)
+                })
+            }
+            (cell.getChildAt(0) as CoverView).bind(e.title, e.ext, coverFor(e))
+            (cell.getChildAt(1) as TextView).text = e.title
+            return cell
+        }
+    }
+
+    private fun coverFor(e: Entry): Bitmap? {
+        covers.get(e.id)?.let { return it }
+        val bmp = library.loadCover(e) ?: return null
+        covers.put(e.id, bmp)
+        return bmp
+    }
+
+    /** Show the list or the grid (or the welcome message if there are no books), and set the toggle's icon. */
+    private fun applyMode() {
+        val useGrid = library.gridMode
+        toggle.setImageResource(if (useGrid) R.drawable.ic_view_list else R.drawable.ic_view_grid)
+        toggle.contentDescription = if (useGrid) "Show as list" else "Show as grid of covers"
+        val hasBooks = entries.isNotEmpty()
+        empty.visibility = if (hasBooks) View.GONE else View.VISIBLE
+        list.visibility = if (hasBooks && !useGrid) View.VISIBLE else View.GONE
+        grid.visibility = if (hasBooks && useGrid) View.VISIBLE else View.GONE
+    }
+
+    private var makingCovers = false
+
+    /** Covers are made once per book, in the background, and cached on the phone. */
+    private fun fillMissingCovers() {
+        if (makingCovers) return
+        val missing = entries.filter { library.needsCover(it) }
+        if (missing.isEmpty()) return
+        makingCovers = true
+        io.execute {
+            for (e in missing) {
+                library.makeCover(e)
+                ui.post { gridAdapter.notifyDataSetChanged() }
+            }
+            ui.post { makingCovers = false }
+        }
+    }
+
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply {
@@ -102,6 +169,17 @@ class LibraryActivity : Activity() {
             text = "Leaf"; textSize = 30f; setTextColor(PAGE)
             typeface = Typeface.create("serif", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        toggle = ImageView(this).apply {
+            setColorFilter(PAGE)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(11), dp(11), dp(11), dp(11))
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), rounded(0x33FFFFFF, 22))
+                addState(intArrayOf(), rounded(0x00000000, 22))
+            }
+            setOnClickListener { library.gridMode = !library.gridMode; applyMode() }
+        }
+        header.addView(toggle, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(8) })
         header.addView(Button(this).apply {
             text = "Add books"; isAllCaps = false; textSize = 15f; setTextColor(FOREST)
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -133,11 +211,30 @@ class LibraryActivity : Activity() {
                 textSize = 15f; gravity = Gravity.CENTER; setTextColor(PAGE); alpha = 0.8f
             })
         }
-        list.emptyView = empty
         list.adapter = adapter
         list.setOnItemClickListener { _, _, pos, _ -> openBook(entries[pos]) }
         list.setOnItemLongClickListener { _, _, pos, _ -> showOptions(entries[pos]); true }
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        // Grid of covers: as many columns as fit (at least two), each cell a 2:3 cover with the title underneath.
+        val usable = resources.displayMetrics.widthPixels - dp(32)
+        gridCols = maxOf(2, usable / dp(116))
+        gridCellW = (usable - (gridCols - 1) * dp(12)) / gridCols
+        grid = GridView(this).apply {
+            numColumns = gridCols
+            columnWidth = gridCellW
+            horizontalSpacing = dp(12)
+            verticalSpacing = dp(18)
+            selector = ColorDrawable(Color.TRANSPARENT)
+            setPadding(dp(16), dp(8), dp(16), dp(16))
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            adapter = gridAdapter
+            setOnItemClickListener { _, _, pos, _ -> openBook(entries[pos]) }
+            setOnItemLongClickListener { _, _, pos, _ -> showOptions(entries[pos]); true }
+            visibility = View.GONE
+        }
+        root.addView(grid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(empty, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
 
@@ -158,9 +255,10 @@ class LibraryActivity : Activity() {
     private fun refresh() {
         entries = library.entries()
         adapter.notifyDataSetChanged()
-        empty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
-        list.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
+        gridAdapter.notifyDataSetChanged()
+        applyMode()
         fillMissingTitles()
+        fillMissingCovers()
     }
 
     private var fillingTitles = false

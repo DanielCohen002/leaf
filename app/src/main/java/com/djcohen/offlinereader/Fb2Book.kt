@@ -1,5 +1,6 @@
 package com.djcohen.offlinereader
 
+import android.graphics.Bitmap
 import android.util.Base64
 import android.text.Spanned
 import org.w3c.dom.Element
@@ -12,6 +13,7 @@ class Fb2Book(file: File) : Book {
     override var title: String = file.nameWithoutExtension.replace('_', ' ').trim()
         private set
     private val binaries = HashMap<String, String>()
+    private var coverBinaryId: String? = null
     private val parts = ArrayList<String>()
     private val partTitles = ArrayList<String>()
     override val chapterTitles: List<String> get() = partTitles
@@ -31,6 +33,7 @@ class Fb2Book(file: File) : Book {
         info?.children("book-title")?.firstOrNull()?.textContent?.trim()?.takeIf { it.isNotEmpty() }?.let { title = it }
         val coverId = info?.children("coverpage")?.firstOrNull()?.children("image")?.firstOrNull()?.let { href(it) }
         if (coverId != null && binaries.containsKey(coverId.removePrefix("#"))) {
+            coverBinaryId = coverId.removePrefix("#")
             parts += "<img src=\"$coverId\"/>"; partTitles += "Cover"
         }
 
@@ -144,6 +147,11 @@ class Fb2Book(file: File) : Book {
                 try { ImageUtil.decode(Base64.decode(b64, Base64.DEFAULT), w, hh, up) } catch (_: Throwable) { null }
             }
         }
+
+    override fun cover(maxW: Int, maxH: Int): Bitmap? {
+        val b64 = coverBinaryId?.let { binaries[it] } ?: return null
+        return try { ImageUtil.decode(Base64.decode(b64, Base64.DEFAULT), maxW, maxH) } catch (_: Throwable) { null }
+    }
 
     override fun close() {}
 }

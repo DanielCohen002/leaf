@@ -1,5 +1,6 @@
 package com.djcohen.offlinereader
 
+import android.graphics.Bitmap
 import android.text.Html
 import android.text.Spanned
 import java.io.ByteArrayOutputStream
@@ -20,6 +21,7 @@ class MobiBook(file: File) : Book {
     private val partTitles = ArrayList<String>()
     private var firstImage = -1
     private var charset: Charset = Charsets.UTF_8
+    private var coverRecord = -1
     private var ncxIdx = -1
     private var ncx: List<Pair<Int, String>> = emptyList()   // (byte position in text, label)
     override val chapterTitles: List<String> get() = partTitles
@@ -114,6 +116,7 @@ class MobiBook(file: File) : Book {
         if (version == 8 && kf8Skel > 0 && kf8Frag > 0) buildKf8(text, kf8Skel, kf8Frag) else buildClassic(text)
 
         // Cover that isn't already the first thing shown.
+        if (coverOffset >= 0 && firstImage >= 0) coverRecord = firstImage + coverOffset
         if (coverOffset >= 0 && firstImage >= 0 && parts.isNotEmpty() && !parts[0].contains("<img", ignoreCase = true)) {
             parts.add(0, "<img src=\"rec:${firstImage + coverOffset}\"/>")
             partTitles.add(0, "Cover")
@@ -413,6 +416,14 @@ class MobiBook(file: File) : Book {
             }
             if (record == null || record < 0) null else ImageUtil.decode(rec(record), w, h, up)
         }
+
+    override fun cover(maxW: Int, maxH: Int): Bitmap? {
+        // The declared cover record, else the first picture in the file (usually the cover).
+        for (record in intArrayOf(coverRecord, firstImage)) {
+            if (record >= 0) ImageUtil.decode(rec(record), maxW, maxH)?.let { return it }
+        }
+        return null
+    }
 
     override fun close() {}
 }

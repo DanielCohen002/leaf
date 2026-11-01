@@ -1,6 +1,8 @@
 package com.djcohen.offlinereader
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import org.json.JSONArray
@@ -14,6 +16,46 @@ data class Entry(val id: String, val fileName: String, val title: String, val ex
 class Library(private val context: Context) {
     private val sp = context.getSharedPreferences("library", Context.MODE_PRIVATE)
     private val dir = File(context.filesDir, "books").apply { mkdirs() }
+    private val coverDir = File(context.filesDir, "covers").apply { mkdirs() }
+
+    /** Library view: false = list, true = grid of covers. Remembered between launches. */
+    var gridMode: Boolean
+        get() = sp.getBoolean("grid", false)
+        set(v) = sp.edit().putBoolean("grid", v).apply()
+
+    // --- covers ---------------------------------------------------------------------------
+
+    private fun coverFile(id: String) = File(coverDir, "$id.jpg")
+    private fun noCoverMarker(id: String) = File(coverDir, "$id.none")
+
+    /** True if a cover has not been made yet (and we haven't already found that the book has none). */
+    fun needsCover(e: Entry) = !coverFile(e.id).exists() && !noCoverMarker(e.id).exists()
+
+    fun loadCover(e: Entry): Bitmap? = coverFile(e.id).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
+
+    /** Make and save a small cover picture for [e], or remember that it has none. Slow: call off the UI thread. */
+    fun makeCover(e: Entry) {
+        try {
+            val bmp: Bitmap? = if (ImageBooks.isImageFormat(e.ext)) {
+                val book = ImageBooks.open(file(e), e.ext)
+                try { book.render(0, 480, 720) } finally { book.close() }
+            } else {
+                val book = BookLoader.open(file(e), e.ext)
+                try { book.cover(480, 720) } finally { book.close() }
+            }
+            if (bmp == null) {
+                noCoverMarker(e.id).createNewFile()
+                return
+            }
+            val scale = minOf(360f / bmp.width, 540f / bmp.height, 1f)
+            val small = if (scale < 1f) {
+                Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt().coerceAtLeast(1), (bmp.height * scale).toInt().coerceAtLeast(1), true)
+            } else bmp
+            coverFile(e.id).outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        } catch (_: Throwable) {
+            try { noCoverMarker(e.id).createNewFile() } catch (_: Throwable) { }
+        }
+    }
 
     fun entries(): List<Entry> {
         val arr = JSONArray(sp.getString("index", "[]"))
@@ -96,6 +138,8 @@ class Library(private val context: Context) {
 
     fun remove(e: Entry) {
         file(e).delete()
+        coverFile(e.id).delete()
+        noCoverMarker(e.id).delete()
         save(entries().filter { it.id != e.id })
         sp.edit().remove("pos_${e.id}").remove("postitle_${e.id}").apply()
     }

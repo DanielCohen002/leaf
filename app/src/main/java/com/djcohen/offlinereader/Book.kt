@@ -28,6 +28,8 @@ interface Book {
     val chapterTitles: List<String>
     /** Build the text for chapter [index]. Images are scaled to fit [maxW] x [maxH] pixels. */
     fun load(index: Int, maxW: Int, maxH: Int): Spanned
+    /** A cover picture for the library grid, or null if the book has none (the library draws a placeholder). */
+    fun cover(maxW: Int, maxH: Int): Bitmap? = null
     fun close()
 }
 
@@ -363,6 +365,16 @@ class EpubBook(file: File) : Book {
         return try {
             ImageUtil.decode(zip.getInputStream(e).use { it.readBytes() }, maxW, maxH, upscale)
         } catch (_: Throwable) { null }
+    }
+
+    override fun cover(maxW: Int, maxH: Int): Bitmap? {
+        coverPath?.let { p -> loadImage(p, maxW, maxH)?.let { return it } }
+        // No declared cover: use the first picture on the first page (many EPUBs have a cover page, not a cover entry).
+        val first = spine.firstOrNull() ?: return null
+        if (first.substringAfterLast('.').lowercase() in setOf("jpg", "jpeg", "png", "gif", "webp")) return loadImage(first, maxW, maxH)
+        val html = readText(first) ?: return null
+        val match = Regex("(?i)(?:src|href)\\s*=\\s*[\"']([^\"']+\\.(?:jpe?g|png|gif|webp))[\"']").find(html) ?: return null
+        return loadImage(resolve(first.substringBeforeLast('/', ""), match.groupValues[1]), maxW, maxH)
     }
 
     override fun close() = zip.close()
