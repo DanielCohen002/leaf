@@ -20,6 +20,8 @@ connection. There is no cloud sync, no analytics, and no web dictionary: lookups
 - Comics and PDFs: one page, two pages side by side (landscape), or continuous scroll; right-to-left (manga) mode; zoom
 - Long-press a word to select it, copy it, or look it up in the offline dictionary (WordNet 3.0)
 - Reading position is remembered per book; reading settings are remembered per file format
+- Library as a list or a grid of covers; books you have read come first (most recent on top), then the rest A to Z
+- Optionally keep a folder (such as `Books`) in sync: chosen once with the system folder picker, so Leaf still needs no storage permission
 
 ## Building
 

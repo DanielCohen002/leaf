@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.util.LruCache
 import android.widget.GridView
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -130,13 +131,16 @@ class LibraryActivity : Activity() {
     /** Covers are made once per book, in the background, and cached on the phone. */
     private fun fillMissingCovers() {
         if (makingCovers) return
-        val missing = entries.filter { library.needsCover(it) }
-        if (missing.isEmpty()) return
+        if (entries.none { library.needsCover(it) }) return
         makingCovers = true
         io.execute {
-            for (e in missing) {
-                library.makeCover(e)
-                ui.post { gridAdapter.notifyDataSetChanged() }
+            while (true) {
+                val todo = library.entries().filter { library.needsCover(it) }
+                if (todo.isEmpty()) break
+                for (e in todo) {
+                    library.makeCover(e)
+                    ui.post { gridAdapter.notifyDataSetChanged() }
+                }
             }
             ui.post { makingCovers = false }
         }
@@ -189,7 +193,7 @@ class LibraryActivity : Activity() {
             }
             stateListAnimator = null
             setPadding(dp(20), 0, dp(20), 0)
-            setOnClickListener { pickFiles() }
+            setOnClickListener { showAddMenu() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
         root.addView(header)
 
@@ -250,6 +254,7 @@ class LibraryActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        if (library.syncFolder != null && System.currentTimeMillis() - lastSync > 60_000) syncFolder(quiet = true)
     }
 
     private fun refresh() {
@@ -285,6 +290,103 @@ class LibraryActivity : Activity() {
         }
     }
 
+    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+
+    /** "Add books": pick files, or choose a folder (like Books) whose books Leaf keeps in sync. */
+    private fun showAddMenu() {
+        val folder = library.syncFolder
+        val items = ArrayList<String>()
+        val actions = ArrayList<() -> Unit>()
+        items += "Pick files…"; actions += { pickFiles() }
+        if (folder == null) {
+            items += "Choose a folder to sync (like Books)…"; actions += { pickFolder() }
+        } else {
+            val name = FolderSync.label(folder)
+            items += "Sync “$name” now"; actions += { syncFolder(quiet = false) }
+            items += "Choose a different folder…"; actions += { pickFolder() }
+            items += "Stop syncing “$name”"; actions += {
+                library.syncFolder = null
+                toast("Stopped syncing. Books already added stay in Leaf.")
+            }
+        }
+        AlertDialog.Builder(this).setTitle("Add books")
+            .setItems(items.toTypedArray()) { _, which -> actions[which]() }
+            .setNegativeButton("Cancel", null)
+            .showLeaf()
+    }
+
+    private fun pickFolder() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            // Open the picker at the Books folder if there is one; the user just taps "Use this folder".
+            putExtra(
+                DocumentsContract.EXTRA_INITIAL_URI,
+                DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Books"),
+            )
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        @Suppress("DEPRECATION")
+        startActivityForResult(i, REQ_FOLDER)
+    }
+
+    private var syncing = false
+    private var lastSync = 0L
+
+    /** Add the books in the synced folder that Leaf does not have yet. Books you removed stay removed. */
+    private fun syncFolder(quiet: Boolean) {
+        val tree = library.syncFolder?.let { Uri.parse(it) } ?: return
+        if (syncing) return
+        syncing = true
+        lastSync = System.currentTimeMillis()
+        if (!quiet) toast("Looking for new books…")
+        io.execute {
+            var added = 0
+            var lostAccess = false
+            val failed = ArrayList<String>()
+            try {
+                val docs = FolderSync.scan(this, tree)
+                val known = library.entries()
+                val have = known.map { it.src }.filter { it.isNotEmpty() }.toSet()
+                val claimed = HashSet<String>()
+                for (d in docs) {
+                    val key = d.uri.toString()
+                    if (key in have || library.isIgnored(key)) continue
+                    // Already added by hand (same kind of file, same size)? Just remember where it came from.
+                    val ext = FolderSync.storedExt(d.name.substringAfterLast('.', "").lowercase())
+                    val twin = known.firstOrNull {
+                        it.src.isEmpty() && it.id !in claimed && it.ext == ext && library.storedSize(it) == d.size
+                    }
+                    if (twin != null) { claimed += twin.id; library.setSource(twin, key); continue }
+                    try {
+                        library.import(d.uri, key)
+                        added++
+                        ui.post { refresh() }
+                    } catch (t: Throwable) {
+                        failed += d.name
+                        library.ignore(key)   // do not retry a broken or locked file every time
+                    }
+                }
+            } catch (e: SecurityException) {
+                lostAccess = true
+            } catch (t: Throwable) {
+                // keep whatever was added
+            }
+            ui.post {
+                syncing = false
+                if (lostAccess) {
+                    library.syncFolder = null
+                    toast("Leaf can no longer read that folder. Choose it again from Add books.")
+                }
+                refresh()
+                val bad = if (failed.isNotEmpty()) " (${failed.size} could not be read)" else ""
+                when {
+                    added > 0 -> toast("Added $added new book" + (if (added == 1) "" else "s") + bad)
+                    failed.isNotEmpty() -> toast("${failed.size} file" + (if (failed.size == 1) "" else "s") + " could not be read")
+                    !quiet && !lostAccess -> toast("Everything in the folder is already in Leaf")
+                }
+            }
+        }
+    }
+
     private fun pickFiles() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -299,6 +401,16 @@ class LibraryActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_FOLDER && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+            }
+            library.syncFolder = uri.toString()
+            syncFolder(quiet = false)
+            return
+        }
         if (requestCode != REQ_PICK || resultCode != RESULT_OK || data == null) return
         val uris = mutableListOf<Uri>()
         data.data?.let { uris += it }
@@ -364,6 +476,7 @@ class LibraryActivity : Activity() {
 
     companion object {
         private const val REQ_PICK = 1
+        private const val REQ_FOLDER = 2
         // Leaf palette (matches the icon).
         private const val FOREST = 0xFF1E3A2A.toInt()
         private const val LEAF = 0xFF6CC070.toInt()
